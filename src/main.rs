@@ -30,6 +30,7 @@ pub type HuaweiFuture<T> = Box<Future<Item = T, Error = errors::HuaweiError>>;
 pub mod error_codes;
 pub mod errors;
 pub mod at;
+pub mod pdu;
 pub mod parse;
 pub mod codec;
 pub mod cmd;
