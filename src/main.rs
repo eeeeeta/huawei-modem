@@ -12,6 +12,8 @@ extern crate encoding;
 extern crate tokio_io;
 extern crate bytes;
 #[macro_use] extern crate derive_is_enum_variant;
+extern crate num;
+#[macro_use] extern crate num_derive;
 
 use std::fs::{File, OpenOptions};
 use tokio_file_unix::File as FileNb;
@@ -30,19 +32,12 @@ pub mod errors;
 pub mod at;
 pub mod parse;
 pub mod codec;
+pub mod cmd;
 mod future;
 
-use failure::Fail;
 use std::path::Path;
-use errors::{HuaweiError, ExecuteError};
-pub trait ModemCommand {
-    type Value;
-    type Error: Fail;
-    type Future: Future<Item = Self::Value, Error = Self::Error>;
-    
-    fn get_atcmd(&mut self) -> AtCommand;
-    fn process_response(&mut self, r: ModemResponse) -> Self::Future;
-}
+use errors::HuaweiError;
+
 pub struct ModemResponseFuture {
     rx: Result<oneshot::Receiver<ModemResponse>, ()>
 }
@@ -92,21 +87,12 @@ impl HuaweiModem {
             ModemResponseFuture { rx: Ok(rx) }
         }
     }
-    pub fn execute_command<C: ModemCommand>(&mut self, mut cmd: C) -> impl Future<Item = C::Value, Error = ExecuteError<C::Error>> {
-        let at = cmd.get_atcmd();
-        let fut = self.send_raw(at);
-        fut.map_err(|e| {
-            ExecuteError::Huawei(e)
-        }).and_then(move |e| cmd.process_response(e).map_err(|e| {
-            ExecuteError::Command(e)
-        }))
-    }
 }
 fn main() {
     env_logger::init().unwrap();
     let mut core = Core::new().unwrap();
     let mut modem = HuaweiModem::new_from_path("/dev/ttyUSB0", &core.handle()).unwrap();
-    let fut = modem.send_raw(AtCommand::Read {param: "+CREG".into() })
+    let fut = cmd::network::get_pin_state(&mut modem)
         .and_then(|res| {
             println!("{:?}", res);
             Ok(())

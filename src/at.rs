@@ -1,6 +1,7 @@
 use error_codes::CmsError;
 use std::fmt;
-#[derive(Fail, Debug, is_enum_variant)]
+use errors::{HuaweiError, HuaweiResult};
+#[derive(Fail, Debug, Clone, PartialEq, Copy, Eq, is_enum_variant)]
 pub enum AtResultCode {
     #[fail(display = "A command is executed, and there is no error.")]
     Ok,
@@ -29,14 +30,14 @@ pub enum AtResultCode {
     #[fail(display = "Too many parameters.")]
     TooManyParameters
 }
-#[derive(Debug, PartialEq, Eq, is_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtValue {
     /// A string-type value - text surrounded by "quotation marks".
     String(String),
     /// An integer.
     Integer(u32),
     /// A range of integers.
-    Range(u32, u32),
+    Range((u32, u32)),
     /// Some value of unknown type.
     Unknown(String),
     /// An empty value, corresponding to nothing at all.
@@ -46,13 +47,52 @@ pub enum AtValue {
     /// A non-bracketed array.
     Array(Vec<AtValue>)
 }
+macro_rules! at_value_impl {
+    ($atv:ident, $($var:ident, $refmeth:ident, $mutmeth:ident, $asmeth:ident, $ty:ty),*) => {
+        impl $atv {
+            $(
+                pub fn $refmeth(&self) -> HuaweiResult<&$ty> {
+                    if let $atv::$var(ref i) = *self {
+                        Ok(i)
+                    }
+                    else {
+                        Err(HuaweiError::TypeMismatch)
+                    }
+                }
+                pub fn $mutmeth(&mut self) -> HuaweiResult<&mut $ty> {
+                    if let $atv::$var(ref mut i) = *self {
+                        Ok(i)
+                    }
+                    else {
+                        Err(HuaweiError::TypeMismatch)
+                    }
+                }
+                pub fn $asmeth(self) -> HuaweiResult<$ty> {
+                    if let $atv::$var(i) = self {
+                        Ok(i)
+                    }
+                    else {
+                        Err(HuaweiError::TypeMismatch)
+                    }
+                }
+             )*
+        }
+    }
+}
+at_value_impl!(AtValue,
+               String, get_string, get_string_mut, as_string, String,
+               Integer, get_integer, get_integer_mut, as_integer, u32,
+               Range, get_range, get_range_mut, as_range, (u32, u32),
+               Unknown, get_unknown, get_unknown_mut, as_unknown, String,
+               BracketedArray, get_bracketed_array, get_bracketed_array_mut, as_bracketed_array, Vec<AtValue>,
+               Array, get_array, get_array_mut, as_array, Vec<AtValue>);
 impl fmt::Display for AtValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::AtValue::*;
         match *self {
             String(ref st) => write!(f, "\"{}\"", st)?,
             Integer(i) => write!(f, "{}", i)?,
-            Range(a, b) => write!(f, "{}-{}", a, b)?,
+            Range((a, b)) => write!(f, "{}-{}", a, b)?,
             Unknown(ref st) => write!(f, "{}", st)?,
             Empty => {},
             BracketedArray(ref val) => {
@@ -73,7 +113,7 @@ impl fmt::Display for AtValue {
         Ok(())
     }
 }
-#[derive(Debug, is_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtResponse {
     /// An information response issued as a result of a command.
     ///
@@ -87,7 +127,39 @@ pub enum AtResponse {
     /// Some other unknown response.
     Unknown(String)
 }
-#[derive(Debug, is_enum_variant)]
+#[derive(Debug, Clone)]
+pub struct AtResponsePacket {
+    pub responses: Vec<AtResponse>,
+    pub status: AtResultCode
+}
+impl AtResponsePacket {
+    pub fn extract_named_response_opt(&self, resp: &str) -> HuaweiResult<Option<&AtValue>> {
+        self.assert_ok()?;
+        for r in self.responses.iter() {
+            if let AtResponse::InformationResponse { ref param, ref response } = *r {
+                if resp == param {
+                    return Ok(Some(response));
+                }
+            }
+        }
+        Ok(None)
+    }
+    pub fn extract_named_response(&self, resp: &str) -> HuaweiResult<&AtValue> {
+        match self.extract_named_response_opt(resp)? {
+            Some(val) => Ok(val),
+            None => Err(HuaweiError::ExpectedResponse(resp.into()))
+        }
+    }
+    pub fn assert_ok(&self) -> HuaweiResult<()> {
+        if self.status.is_ok() {
+            Ok(())
+        }
+        else {
+            Err(HuaweiError::AtError(self.status))
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtCommand {
     /// Either execute a non-basic command named `param` with `value` as
     /// argument, or set the current value of `param` to `value`.

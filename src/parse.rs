@@ -1,4 +1,6 @@
 use at::*;
+use error_codes::CmsError;
+use num::FromPrimitive;
 use encoding::{Encoding, DecoderTrap};
 use encoding::all::{ASCII};
 use nom::{line_ending, not_line_ending};
@@ -114,7 +116,7 @@ named!(pub parse_single_value(&[u8]) -> AtValue,
        alt_complete!(
            parse_bracketed_array |
            map!(parse_string, |s| AtValue::String(s.into())) |
-           map!(parse_range, |(a, b)| AtValue::Range(a, b)) |
+           map!(parse_range, |x| AtValue::Range(x)) |
            map!(parse_integer, |i| AtValue::Integer(i)) |
            map!(parse_unknown, |u| AtValue::Unknown(u.into())) |
            map!(parse_empty, |_| AtValue::Empty)
@@ -151,7 +153,12 @@ named!(pub parse_response_code(&[u8]) -> AtResultCode,
                }
                if p == "+CMS ERROR" {
                    if let AtValue::Integer(r) = r {
-                       return Ok(AtResultCode::CmsErrorUnknown(r));
+                       if let Some(e) = CmsError::from_u32(r) {
+                           return Ok(AtResultCode::CmsError(e));
+                       }
+                       else {
+                           return Ok(AtResultCode::CmsErrorUnknown(r));
+                       }
                    }
                }
                Err("Incorrect information response")

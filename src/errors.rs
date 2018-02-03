@@ -1,21 +1,35 @@
 use std::io;
 use futures::sync::oneshot::Canceled;
+use at;
 use failure::Fail;
 #[derive(Fail, Debug)]
-pub enum ExecuteError<T> where T: Fail {
-    #[fail(display = "Command failure: {}", _0)]
+pub enum CommandError<T> where T: Fail {
+    #[fail(display = "Error in command: {}", _0)]
     Command(#[cause] T),
-    #[fail(display = "Modem library failure: {}", _0)]
+    #[fail(display = "{}", _0)]
     Huawei(#[cause] HuaweiError)
+}
+impl<T> From<HuaweiError> for CommandError<T> where T: Fail {
+    fn from(e: HuaweiError) -> CommandError<T> {
+        CommandError::Huawei(e)
+    }
 }
 #[derive(Fail, Debug)]
 pub enum HuaweiError {
     #[fail(display = "Failed to communicate with the background future (it's likely dead).")]
     FutureDied,
+    #[fail(display = "Error from modem: {}", _0)]
+    AtError(#[cause] at::AtResultCode),
     #[fail(display = "An I/O error occurred: {}", _0)]
     IoError(#[cause] io::Error),
     #[fail(display = "There was an error parsing data.")]
     ParseError(::nom::ErrorKind),
+    #[fail(display = "Expected a {} response", _0)]
+    ExpectedResponse(String),
+    #[fail(display = "Type mismatch when parsing reply")]
+    TypeMismatch,
+    #[fail(display = "Value out of range: {}", _0)]
+    ValueOutOfRange(at::AtValue),
     #[fail(display = "[this should never be shown]")]
     #[doc(hidden)]
     __Nonexhaustive

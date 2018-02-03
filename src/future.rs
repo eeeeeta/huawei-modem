@@ -3,12 +3,12 @@ use tokio_file_unix::File as FileNb;
 use tokio_core::reactor::PollEvented;
 use tokio_io::codec::Framed;
 use codec::AtCodec;
-use at::{AtResponse, AtCommand};
+use at::{AtResponse, AtResponsePacket, AtCommand};
 use futures::{Future, Sink, Stream, Async, Poll};
 use futures::sync::{oneshot, mpsc};
 use failure;
 
-pub(crate) type ModemResponse = Vec<AtResponse>;
+pub(crate) type ModemResponse = AtResponsePacket;
 
 pub(crate) struct ModemRequest {
     pub(crate) command: AtCommand,
@@ -69,7 +69,17 @@ impl Future for HuaweiModemFuture {
                             let mut state = self.cur.take().unwrap();
                             state.responses.extend(r);
                             debug!("request completed with responses: {:?}", state.responses);
-                            let _ = state.notif.send(state.responses);
+                            let pos = state.responses.iter().position(|x| x.is_result_code())
+                                .unwrap();
+                            let res = state.responses.remove(pos);
+                            let res = if let AtResponse::ResultCode(res) = res {
+                                res
+                            }
+                            else { unreachable!() };
+                            let _ = state.notif.send(AtResponsePacket {
+                                responses: state.responses,
+                                status: res
+                            });
                         }
                         else {
                             trace!("new responses: {:?}", r);

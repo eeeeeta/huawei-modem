@@ -1,4 +1,4 @@
-#[derive(Fail, Debug)]
+#[derive(FromPrimitive, Fail, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum CmsError {
     #[fail(display = "Unassigned (unallocated) number")]
     UnassignedNumber = 1,
