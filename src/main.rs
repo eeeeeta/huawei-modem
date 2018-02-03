@@ -33,6 +33,7 @@ pub mod at;
 pub mod parse;
 pub mod codec;
 pub mod cmd;
+pub mod util;
 mod future;
 
 use std::path::Path;
@@ -92,7 +93,7 @@ fn main() {
     env_logger::init().unwrap();
     let mut core = Core::new().unwrap();
     let mut modem = HuaweiModem::new_from_path("/dev/ttyUSB0", &core.handle()).unwrap();
-    let fut = cmd::network::get_pin_state(&mut modem)
+    let fut = cmd::sms::set_sms_textmode(&mut modem, true)
         .and_then(|res| {
             println!("{:?}", res);
             Ok(())
