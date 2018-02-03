@@ -1,0 +1,4 @@
+*.swp
+.gdb_history
+/target/
+**/*.rs.bk

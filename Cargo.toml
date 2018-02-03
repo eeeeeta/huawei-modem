@@ -1,0 +1,18 @@
+[package]
+authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
+name = "huawei-modem"
+version = "0.1.0"
+
+[dependencies]
+bytes = "0.4.5"
+derive_is_enum_variant = "0.1.1"
+encoding = "0.2.33"
+env_logger = "0.4.3"
+failure = "0.1.1"
+failure_derive = "0.1.1"
+futures = "0.1.17"
+log = "0.3.8"
+nom = "3.2.1"
+tokio-core = "0.1.11"
+tokio-file-unix = "0.4.1"
+tokio-io = "0.1.4"

@@ -1,0 +1,147 @@
+use error_codes::CmsError;
+use std::fmt;
+#[derive(Fail, Debug, is_enum_variant)]
+pub enum AtResultCode {
+    #[fail(display = "A command is executed, and there is no error.")]
+    Ok,
+    #[fail(display = "A connection is established.")]
+    Connect,
+    #[fail(display = "An incoming call is originated.")]
+    Ring,
+    #[fail(display = "A connection is terminated.")]
+    NoCarrier,
+    #[fail(display = "A generic error occurred.")]
+    Error,
+    #[fail(display = "An error occurred: code {}", _0)]
+    CmeError(u32),
+    #[fail(display = "An SMS-related error occurred: {}", _0)]
+    CmsError(#[cause] CmsError),
+    #[fail(display = "An unknown SMS-related error occurred: code {}", _0)]
+    CmsErrorUnknown(u32),
+    #[fail(display = "There is no dialtone.")]
+    NoDialtone,
+    #[fail(display = "Recipient is busy.")]
+    Busy,
+    #[fail(display = "No reply (timeout occurred).")]
+    NoAnswer,
+    #[fail(display = "Command not supported.")]
+    CommandNotSupported,
+    #[fail(display = "Too many parameters.")]
+    TooManyParameters
+}
+#[derive(Debug, PartialEq, Eq, is_enum_variant)]
+pub enum AtValue {
+    /// A string-type value - text surrounded by "quotation marks".
+    String(String),
+    /// An integer.
+    Integer(u32),
+    /// A range of integers.
+    Range(u32, u32),
+    /// Some value of unknown type.
+    Unknown(String),
+    /// An empty value, corresponding to nothing at all.
+    Empty,
+    /// A bracketed array.
+    BracketedArray(Vec<AtValue>),
+    /// A non-bracketed array.
+    Array(Vec<AtValue>)
+}
+impl fmt::Display for AtValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::AtValue::*;
+        match *self {
+            String(ref st) => write!(f, "\"{}\"", st)?,
+            Integer(i) => write!(f, "{}", i)?,
+            Range(a, b) => write!(f, "{}-{}", a, b)?,
+            Unknown(ref st) => write!(f, "{}", st)?,
+            Empty => {},
+            BracketedArray(ref val) => {
+                write!(f, "(")?;
+                for (i, val) in val.iter().enumerate() {
+                    let c = if i == 0 { "" } else { "," };
+                    write!(f, "{}{}", c, val)?;
+                }
+                write!(f, ")")?;
+            },
+            Array(ref val) => {
+                for (i, val) in val.iter().enumerate() {
+                    let c = if i == 0 { "" } else { "," };
+                    write!(f, "{}{}", c, val)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, is_enum_variant)]
+pub enum AtResponse {
+    /// An information response issued as a result of a command.
+    ///
+    /// Corresponds to '<param>: <response>'.
+    InformationResponse {
+        param: String,
+        response: AtValue
+    },
+    /// An AT result code, indicating the completion of a command.
+    ResultCode(AtResultCode),
+    /// Some other unknown response.
+    Unknown(String)
+}
+#[derive(Debug, is_enum_variant)]
+pub enum AtCommand {
+    /// Either execute a non-basic command named `param` with `value` as
+    /// argument, or set the current value of `param` to `value`.
+    ///
+    /// Corresponds to `AT<param>=<value>`.
+    Equals {
+        param: String,
+        value: AtValue,
+    },
+    /// Execute a non-basic command, with the name of `command`.
+    ///
+    /// Corresponds to `AT<command>`.
+    Execute {
+        command: String
+    },
+    /// Read the current value of `param`.
+    ///
+    /// Corresponds to `AT<param>?`.
+    Read {
+        param: String
+    },
+    /// Return the available value range of `param`.
+    ///
+    /// Corresponds to `AT<param>=?'.
+    Test {
+        param: String
+    },
+    /// Execute a basic command, where `command` indicates a single letter (A-Z)
+    /// or the & symbol and a single letter, with an optional number parameter.
+    ///
+    /// Corresponds to `AT<command>[<number>]`.
+    Basic {
+        command: String,
+        number: Option<usize>
+    },
+    /// Just send some raw text.
+    Text(String)
+}
+impl fmt::Display for AtCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::AtCommand::*;
+        match *self {
+            Equals { ref param, ref value } => write!(f, "AT{}={}", param, value)?,
+            Execute { ref command } => write!(f, "AT{}", command)?,
+            Read { ref param } => write!(f, "AT{}?", param)?,
+            Test { ref param } => write!(f, "AT{}=?", param)?,
+            Basic { ref command, ref number } => {
+                write!(f, "AT{}", command)?;
+                if let Some(n) = *number {
+                    write!(f, "{}", n)?;
+                }
+            },
+            Text(ref t) => write!(f, "{}", t)?
+        }
+        Ok(())
+    }
+}
