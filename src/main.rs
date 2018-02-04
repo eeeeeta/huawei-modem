@@ -24,6 +24,8 @@ use tokio_io::AsyncRead;
 use futures::sync::{oneshot, mpsc};
 use future::{ModemRequest, ModemResponse, HuaweiModemFuture};
 use tokio_core::reactor::{Core, Handle};
+use pdu::{HexData, Pdu};
+use std::io::prelude::*;
 pub use errors::HuaweiResult;
 pub type HuaweiFuture<T> = Box<Future<Item = T, Error = errors::HuaweiError>>;
 
@@ -94,10 +96,17 @@ fn main() {
     env_logger::init().unwrap();
     let mut core = Core::new().unwrap();
     let mut modem = HuaweiModem::new_from_path("/dev/ttyUSB0", &core.handle()).unwrap();
-    let fut = cmd::sms::set_sms_textmode(&mut modem, true)
-        .and_then(|res| {
-            println!("{:?}", res);
-            Ok(())
-        });
-    core.run(fut).unwrap();
+    println!("Input data in the form smsc;recipient;message");
+    let stdin = ::std::io::stdin();
+    let lock = stdin.lock();
+    for ln in lock.lines() {
+        let ln = ln.unwrap();
+        let ln = ln.split(";").collect::<Vec<_>>();
+        println!("Sending \"{}\" to {} (SMSC {})...", ln[2], ln[1], ln[0]);
+        let msg = Pdu::make_simple_message(ln[0], ln[1], ln[2]);
+        println!("{:?}", msg);
+        println!("{}", HexData(&msg.as_bytes().0));
+        let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
+        println!("Result: {:?}", core.run(fut));
+    }
 }

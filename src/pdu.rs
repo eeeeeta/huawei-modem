@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TypeOfNumber {
@@ -29,7 +31,7 @@ impl Default for AddressType {
     fn default() -> Self {
         AddressType {
             type_of_number: TypeOfNumber::International,
-            numbering_plan_identification: NumberingPlanIdentification::NetworkDetermined
+            numbering_plan_identification: NumberingPlanIdentification::IsdnTelephone
         }
     }
 }
@@ -41,6 +43,7 @@ impl AddressType {
         ret
     }
 }
+#[derive(Debug, Clone)]
 pub struct PhoneNumber(Vec<u8>);
 impl PhoneNumber {
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -62,30 +65,25 @@ impl PhoneNumber {
             cur |= 0b1111_0000;
             ret.push(cur);
         }
-        for b in ret.iter() {
-        print!("{:02X}", b);
-    }
-    println!("");
         ret
     }
 }
+#[derive(Debug, Clone)]
 pub struct PduAddress {
     type_addr: AddressType,
-    number: PhoneNumber,
-    broken_len: bool
+    number: PhoneNumber
 }
 impl PduAddress {
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn as_bytes(&self, broken_len: bool) -> Vec<u8> {
         let mut ret = vec![];
         ret.push(self.type_addr.as_u8());
         ret.extend(self.number.as_bytes());
-        let len = if self.broken_len {
+        let len = if broken_len {
             self.number.0.len()
         } else {
             ret.len()
         };
         ret.insert(0, len as u8);
-        println!("{:?} - {}", ret, len);
         ret
     }
 }
@@ -163,6 +161,7 @@ impl SimplisticDataCodingScheme {
         ret
     }
 }
+#[derive(Debug, Clone)]
 pub struct Pdu {
     pub sca: PduAddress,
     pub first_octet: PduFirstOctet,
@@ -173,14 +172,54 @@ pub struct Pdu {
     pub user_data: Vec<u8>
 }
 impl Pdu {
+    pub fn make_simple_message(smsc: &str, recipient: &str, msg: &str) -> Self {
+        let smsc: Vec<u8> = smsc.chars().filter_map(|x| {
+            match x {
+                '0'...'9' => Some(x as u8 - 48),
+                _ => None
+            }
+        }).collect();
+        let recipient: Vec<u8> = recipient.chars().filter_map(|x| {
+            match x {
+                '0'...'9' => Some(x as u8 - 48),
+                _ => None
+            }
+        }).collect();
+        let msg = encode_sms_7bit(msg.as_bytes());
+        Pdu {
+            sca: PduAddress {
+                type_addr: Default::default(),
+                number: PhoneNumber(smsc)
+            },
+            first_octet: PduFirstOctet {
+                mti: MessageType::SmsSubmit,
+                rd: false,
+                vpf: VpFieldValidity::Invalid,
+                rp: false,
+                udhi: false,
+                srr: false
+            },
+            message_id: 0,
+            destination: PduAddress {
+                type_addr: Default::default(),
+                number: PhoneNumber(recipient)
+            },
+            dcs: SimplisticDataCodingScheme {
+                class: MessageClass::StoreToNv,
+                encoding: MessageEncoding::Gsm7Bit
+            },
+            validity_period: 0,
+            user_data: msg
+        }
+    }
     pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
-        let sca = self.sca.as_bytes();
+        let sca = self.sca.as_bytes(false);
         let scalen = sca.len();
         ret.extend(sca);
         ret.push(self.first_octet.as_u8());
         ret.push(self.message_id);
-        ret.extend(self.destination.as_bytes());
+        ret.extend(self.destination.as_bytes(true));
         ret.push(0);
         ret.push(self.dcs.as_u8());
         if self.first_octet.vpf != VpFieldValidity::Invalid {
@@ -190,6 +229,15 @@ impl Pdu {
         ret.extend(self.user_data.clone());
         let tpdu_len = ret.len() - scalen;
         (ret, tpdu_len)
+    }
+}
+pub struct HexData<'a>(pub &'a [u8]);
+impl<'a> fmt::Display for HexData<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+       for b in self.0.iter() {
+           write!(f, "{:02X}", b)?;
+       }
+       Ok(())
     }
 }
 pub fn encode_sms_7bit(orig: &[u8]) -> Vec<u8> {
