@@ -28,7 +28,7 @@ pub struct AddressType {
 impl Default for AddressType {
     fn default() -> Self {
         AddressType {
-            type_of_number: TypeOfNumber::Unknown,
+            type_of_number: TypeOfNumber::International,
             numbering_plan_identification: NumberingPlanIdentification::NetworkDetermined
         }
     }
@@ -62,20 +62,30 @@ impl PhoneNumber {
             cur |= 0b1111_0000;
             ret.push(cur);
         }
+        for b in ret.iter() {
+        print!("{:02X}", b);
+    }
+    println!("");
         ret
     }
 }
 pub struct PduAddress {
     type_addr: AddressType,
-    number: PhoneNumber
+    number: PhoneNumber,
+    broken_len: bool
 }
 impl PduAddress {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
         ret.push(self.type_addr.as_u8());
         ret.extend(self.number.as_bytes());
-        let len = ret.len();
+        let len = if self.broken_len {
+            self.number.0.len()
+        } else {
+            ret.len()
+        };
         ret.insert(0, len as u8);
+        println!("{:?} - {}", ret, len);
         ret
     }
 }
@@ -163,17 +173,23 @@ pub struct Pdu {
     pub user_data: Vec<u8>
 }
 impl Pdu {
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
-        ret.extend(self.sca.as_bytes());
+        let mut scalen = 0;
+        let sca = self.sca.as_bytes();
+        scalen = sca.len();
+        ret.extend(sca);
         ret.push(self.first_octet.as_u8());
         ret.push(self.message_id);
         ret.extend(self.destination.as_bytes());
         ret.push(0);
         ret.push(self.dcs.as_u8());
-        ret.push(self.validity_period);
+        if self.first_octet.vpf != VpFieldValidity::Invalid {
+            ret.push(self.validity_period);
+        }
         ret.push(self.user_data.len() as u8);
         ret.extend(self.user_data.clone());
-        ret
+        let tpdu_len = ret.len() - scalen;
+        (ret, tpdu_len)
     }
 }
