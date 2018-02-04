@@ -175,9 +175,8 @@ pub struct Pdu {
 impl Pdu {
     pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
-        let mut scalen = 0;
         let sca = self.sca.as_bytes();
-        scalen = sca.len();
+        let scalen = sca.len();
         ret.extend(sca);
         ret.push(self.first_octet.as_u8());
         ret.push(self.message_id);
@@ -193,3 +192,29 @@ impl Pdu {
         (ret, tpdu_len)
     }
 }
+pub fn encode_sms_7bit(orig: &[u8]) -> Vec<u8> {
+    let mut ret = vec![];
+    let mut chars_cur = 7;
+    let mut chars_next = 1;
+    for (i, data) in orig.iter().enumerate() {
+        if chars_cur == 0 {
+            chars_cur = 7;
+            chars_next = 1;
+            continue;
+        }
+        let mut cur = *data >> (7 - chars_cur);
+        let next = if let Some(n) = orig.get(i+1) {
+            *n << (8 - chars_next)
+        }
+        else {
+            0
+        };
+        cur |= next;
+        ret.push(cur);
+        chars_cur -= 1;
+        chars_next += 1;
+    }
+    ret.push(0);
+    ret
+}
+
