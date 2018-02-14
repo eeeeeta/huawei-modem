@@ -161,6 +161,9 @@ named!(pub parse_response_code(&[u8]) -> AtResultCode,
                            return Ok(AtResultCode::CmsErrorUnknown(r));
                        }
                    }
+                   else if let AtValue::Unknown(s) = r {
+                       return Ok(AtResultCode::CmsErrorString(s));
+                   }
                }
                Err("Incorrect information response")
            })

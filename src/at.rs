@@ -1,7 +1,7 @@
 use error_codes::CmsError;
 use std::fmt;
 use errors::{HuaweiError, HuaweiResult};
-#[derive(Fail, Debug, Clone, PartialEq, Copy, Eq, is_enum_variant)]
+#[derive(Fail, Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtResultCode {
     #[fail(display = "A command is executed, and there is no error.")]
     Ok,
@@ -17,6 +17,8 @@ pub enum AtResultCode {
     CmeError(u32),
     #[fail(display = "An SMS-related error occurred: {}", _0)]
     CmsError(#[cause] CmsError),
+    #[fail(display = "An unknown SMS-related error occurred: {}", _0)]
+    CmsErrorString(String),
     #[fail(display = "An unknown SMS-related error occurred: code {}", _0)]
     CmsErrorUnknown(u32),
     #[fail(display = "There is no dialtone.")]
@@ -155,7 +157,7 @@ impl AtResponsePacket {
             Ok(())
         }
         else {
-            Err(HuaweiError::AtError(self.status))
+            Err(HuaweiError::AtError(self.status.clone()))
         }
     }
 }

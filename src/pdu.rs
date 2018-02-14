@@ -57,7 +57,7 @@ impl AddressType {
         ret
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhoneNumber(pub Vec<u8>);
 impl PhoneNumber {
     pub fn from_bytes(b: &[u8]) -> Self {
@@ -94,7 +94,7 @@ impl PhoneNumber {
         ret
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PduAddress {
     pub type_addr: AddressType,
     pub number: PhoneNumber
@@ -209,6 +209,20 @@ pub enum DataCodingScheme {
     }
 }
 impl DataCodingScheme {
+    pub fn encoding(&self) -> MessageEncoding {
+        use self::DataCodingScheme::*;
+        match *self {
+            Standard { encoding, .. } => encoding,
+            Reserved => MessageEncoding::Gsm7Bit,
+            MessageWaitingDiscard { .. } => MessageEncoding::Gsm7Bit,
+            MessageWaiting { ucs2, .. } => if ucs2 {
+                MessageEncoding::Ucs2
+            }
+            else {
+                MessageEncoding::Gsm7Bit
+            }
+        }
+    }
     pub fn from_u8(b: u8) -> Self {
         if (b & 0b1100_0000) == 0b0000_0000 {
             let compressed = (b & 0b0010_0000) > 0;
@@ -256,8 +270,9 @@ impl DataCodingScheme {
         }
     }
     pub fn as_u8(&self) -> u8 {
+        use self::DataCodingScheme::*;
         match *self {
-            DataCodingScheme::Standard { compressed, class, encoding } => {
+            Standard { compressed, class, encoding } => {
                 let mut ret = 0b0001_0000;
                 if compressed {
                     ret |= 0b0010_0000;
@@ -266,8 +281,8 @@ impl DataCodingScheme {
                 ret |= encoding as u8;
                 ret
             },
-            DataCodingScheme::Reserved => 0b0100_0101,
-            DataCodingScheme::MessageWaiting { waiting, type_indication, ucs2 } => {
+            Reserved => 0b0100_0101,
+            MessageWaiting { waiting, type_indication, ucs2 } => {
                 let mut ret = if ucs2 {
                     0b1110_0000
                 }
@@ -280,7 +295,7 @@ impl DataCodingScheme {
                 ret |= type_indication as u8;
                 ret
             },
-            DataCodingScheme::MessageWaitingDiscard { waiting, type_indication } => {
+            MessageWaitingDiscard { waiting, type_indication } => {
                 let mut ret = 0b1100_0000;
                 if waiting {
                     ret |= 0b0000_1000;
@@ -315,7 +330,135 @@ pub enum MessageEncoding {
     Ucs2 = 0b0000_10_00,
     Reserved = 0b0000_11_00,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliverPduFirstOctet {
+    mti: MessageType,
+    sri: bool,
+    udhi: bool,
+    rp: bool
+}
+impl DeliverPduFirstOctet {
+    pub fn from_u8(b: u8) -> Self {
+        let mti = MessageType::from_u8(b & 0b000000_11)
+            .expect("MessageType conversions should be exhaustive!");
+        let sri = (b & 0b00100000) > 0;
+        let udhi = (b & 0b01000000) > 0;
+        let rp = (b & 0b01000000) > 0;
+        DeliverPduFirstOctet { mti, sri, udhi, rp }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmscTimestamp {
+    year: u8,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    timezone: u8
+}
+pub fn reverse_byte(b: u8) -> u8 {
+    let units = b >> 4;
+    let tens = b & 0b0000_1111;
+    (tens * 10) + units
+}
+impl SmscTimestamp {
+    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+        if b.len() != 7 {
+            Err(HuaweiError::InvalidPdu("SmscTimestamp must be 7 bytes long"))?
+        }
+        Ok(SmscTimestamp {
+            year: reverse_byte(b[0]),
+            month: reverse_byte(b[1]),
+            day: reverse_byte(b[2]),
+            hour: reverse_byte(b[3]),
+            minute: reverse_byte(b[4]),
+            second: reverse_byte(b[5]),
+            timezone: reverse_byte(b[6]),
+        })
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliverPdu {
+    pub sca: Option<PduAddress>,
+    pub first_octet: DeliverPduFirstOctet,
+    pub originating_address: PduAddress,
+    pub dcs: DataCodingScheme,
+    pub scts: SmscTimestamp,
+    pub user_data: Vec<u8>,
+    pub user_data_len: u8
+}
+macro_rules! check_offset {
+    ($b:ident, $offset:ident, $reason:expr) => {
+        if $b.get($offset).is_none() {
+            return Err(HuaweiError::InvalidPdu(concat!("Offset check failed for: ", $reason)));
+        }
+    }
+}
+impl DeliverPdu {
+    pub fn get_message_data(&self) -> GsmMessageData {
+        GsmMessageData {
+            bytes: self.user_data.clone(),
+            user_data_len: self.user_data_len as _,
+            encoding: self.dcs.encoding()
+        }
+    }
+    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+        let scalen = b[0];
+        let mut offset: usize = scalen as usize + 1;
+        let sca = if scalen > 0 {
+            let o = offset - 1;
+            check_offset!(b, o, "SCA");
+            Some(PduAddress::from_bytes(&b[1..offset])?)
+        }
+        else {
+            None
+        };
+        check_offset!(b, offset, "first octet");
+        let first_octet = DeliverPduFirstOctet::from_u8(b[offset]);
+        offset += 1;
+        check_offset!(b, offset, "originating address len");
+        let destination_len = b[offset];
+        offset += 1;
+        let real_len = (destination_len / 2) + 1;
+        let destination_end = offset + (real_len as usize);
+        let de = destination_end - 1;
+        check_offset!(b, de, "originating address");
+        let originating_address = PduAddress::from_bytes(&b[offset..destination_end])?;
+        offset += real_len as usize;
+        check_offset!(b, offset, "protocol identifier");
+        let _pid = b[offset];
+        offset += 1;
+        check_offset!(b, offset, "data coding scheme");
+        let dcs = DataCodingScheme::from_u8(b[offset]);
+        offset += 1;
+        let scts_end = offset + 7;
+        let ss = offset + 6;
+        check_offset!(b, ss, "service center timestamp");
+        let scts = SmscTimestamp::from_bytes(&b[offset..scts_end])?;
+        offset += 7;
+        check_offset!(b, offset, "user data len");
+        let user_data_len = b[offset];
+        offset += 1;
+        let user_data = if b.get(offset).is_some() {
+            b[offset..].to_owned()
+        }
+        else {
+            vec![]
+        };
+        Ok(DeliverPdu {
+            sca,
+            first_octet,
+            originating_address,
+            dcs,
+            scts,
+            user_data,
+            user_data_len
+        })
+
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pdu {
     pub sca: Option<PduAddress>,
     pub first_octet: PduFirstOctet,
@@ -353,6 +496,67 @@ impl Pdu {
             user_data_len: msg.user_data_len as u8
         }
     }
+    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+        let scalen = b[0];
+        let mut offset: usize = scalen as usize + 1;
+        let sca = if scalen > 0 {
+            let o = offset - 1;
+            check_offset!(b, o, "SCA");
+            Some(PduAddress::from_bytes(&b[1..offset])?)
+        }
+        else {
+            None
+        };
+        check_offset!(b, offset, "first octet");
+        let first_octet = PduFirstOctet::from_u8(b[offset]);
+        offset += 1;
+        check_offset!(b, offset, "message ID");
+        let message_id = b[offset];
+        offset += 1;
+        check_offset!(b, offset, "destination len");
+        let destination_len = b[offset];
+        offset += 1;
+        let real_len = (destination_len / 2) + 1;
+        let destination_end = offset + (real_len as usize);
+        let de = destination_end - 1;
+        check_offset!(b, de, "destination address");
+        let destination = PduAddress::from_bytes(&b[offset..destination_end])?;
+        offset += real_len as usize;
+        check_offset!(b, offset, "protocol identifier");
+        let _pid = b[offset];
+        offset += 1;
+        check_offset!(b, offset, "data coding scheme");
+        let dcs = DataCodingScheme::from_u8(b[offset]);
+        offset += 1;
+        let validity_period = if first_octet.vpf != VpFieldValidity::Invalid {
+            check_offset!(b, offset, "validity period");
+            let ret = b[offset];
+            offset += 1;
+            ret
+        }
+        else {
+            0
+        };
+        check_offset!(b, offset, "user data len");
+        let user_data_len = b[offset];
+        offset += 1;
+        let user_data = if b.get(offset).is_some() {
+            b[offset..].to_owned()
+        }
+        else {
+            vec![]
+        };
+        Ok(Pdu {
+            sca,
+            first_octet,
+            message_id,
+            destination,
+            dcs,
+            validity_period,
+            user_data,
+            user_data_len
+        })
+    }
     pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
         let mut scalen = 1;
@@ -387,6 +591,21 @@ impl<'a> fmt::Display for HexData<'a> {
        Ok(())
     }
 }
+impl<'a> HexData<'a> {
+    pub fn decode(data: &str) -> HuaweiResult<Vec<u8>> {
+        data.as_bytes()
+            .chunks(2)
+            .map(::std::str::from_utf8)
+            .map(|x| {
+                match x {
+                    Ok(x) => u8::from_str_radix(x, 16)
+                        .map_err(|_| HuaweiError::InvalidPdu("invalid hex string")),
+                    Err(_) => Err(HuaweiError::InvalidPdu("invalid hex string"))
+                }
+            })
+            .collect()
+    }
+}
 #[derive(Debug, Clone)]
 pub struct GsmMessageData {
     encoding: MessageEncoding,
@@ -402,6 +621,22 @@ impl GsmMessageData {
     }
     pub fn user_data_len(&self) -> usize {
         self.user_data_len
+    }
+    pub fn decode_message(&self) -> Option<String> {
+        use encoding::{Encoding, DecoderTrap};
+        use encoding::all::UTF_16BE;
+        use gsm_encoding;
+
+        match self.encoding {
+            MessageEncoding::Gsm7Bit => {
+                let buf = decode_sms_7bit(&self.bytes);
+                Some(gsm_encoding::gsm_decode_string(&buf))
+            },
+            MessageEncoding::Ucs2 => {
+                Some(UTF_16BE.decode(&self.bytes, DecoderTrap::Replace).unwrap())
+            },
+            _ => None
+        }
     }
     pub fn encode_message(msg: &str) -> GsmMessageData {
         use encoding::{Encoding, EncoderTrap};
@@ -427,6 +662,27 @@ impl GsmMessageData {
             }
         }
     }
+}
+pub fn decode_sms_7bit(orig: &[u8]) -> Vec<u8> {
+    let mut ret = vec![0];
+    let mut chars_cur = 7;
+    let mut i = 0;
+    for (j, data) in orig.iter().enumerate() {
+        if chars_cur == 0 {
+            chars_cur = 7;
+            ret.push(0);
+            i += 1;
+        }
+        let next = data >> chars_cur;
+        let mut cur = ((data << (8 - chars_cur)) >> (8 - chars_cur)) << (7 - chars_cur);
+        ret[i] |= cur;
+        if j+1 < orig.len() {
+            ret.push(next);
+        }
+        chars_cur -= 1;
+        i += 1;
+    }
+    ret
 }
 pub fn encode_sms_7bit(orig: &[u8]) -> Vec<u8> {
     let mut ret = vec![];

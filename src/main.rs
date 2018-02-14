@@ -111,11 +111,26 @@ fn main() {
         Ok(())
     });
     core.handle().spawn(urcfut);
+    println!("Setting textmode false...");
+    let fut = cmd::sms::set_sms_textmode(&mut modem, false);
+    println!("Result: {:?}", core.run(fut));
     println!("Input data in the form recipient;message");
     let stdin = ::std::io::stdin();
     let lock = stdin.lock();
     for ln in lock.lines() {
         let ln = ln.unwrap();
+        if ln == "read" {
+            println!("Reading messages...");
+            let fut = cmd::sms::list_sms_pdu(&mut modem, cmd::sms::MessageStatus::All)
+                .map(|v| {
+                    for msg in v {
+                        println!("Message: {:?}", msg);
+                        println!("Text: {}", msg.pdu.get_message_data().decode_message().unwrap_or("[unreadable]".into()));
+                    }
+                });
+            println!("Result: {:?}", core.run(fut));
+            continue;
+        }
         let ln = ln.split(";").collect::<Vec<_>>();
         println!("Sending \"{}\" to {}...", ln[1], ln[0]);
         let recipient = PduAddress::from_str(ln[0]);
@@ -124,6 +139,8 @@ fn main() {
         println!("Message data: {:?}", msg);
         let msg = Pdu::make_simple_message(recipient, msg);
         println!("PDU: {:?}", msg);
+        let pdu = Pdu::from_bytes(&msg.as_bytes().0).unwrap();
+        assert_eq!(pdu, msg);
         println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
         let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
         println!("Result: {:?}", core.run(fut));

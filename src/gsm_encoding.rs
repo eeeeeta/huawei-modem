@@ -76,6 +76,39 @@ pub static GSM_ENCODING_TABLE: [(char, u8); 65] = [
     ('ü', 0x7E),
     ('à', 0x7F)
 ];
+pub fn gsm_decode_string(input: &[u8]) -> String {
+    let mut ret = String::new();
+    let mut skip = false;
+    for (i, b) in input.iter().enumerate() {
+        if skip {
+            skip = false;
+            continue;
+        }
+        match *b {
+            b'A' ... b'Z' | b'a' ... b'z' | b'0' ... b'9' => {
+                ret.push(*b as char);
+            },
+            0x1B => {
+                if let Some(b) = input.get(i+1) {
+                    for &(ch, val) in GSM_EXTENDED_ENCODING_TABLE.iter() {
+                        if val == *b {
+                            ret.push(ch);
+                            skip = true;
+                        }
+                    }
+                }
+            },
+            b => {
+                for &(ch, val) in GSM_ENCODING_TABLE.iter() {
+                    if val == b {
+                        ret.push(ch);
+                    }
+                }
+            }
+        }
+    }
+    ret
+}
 pub fn try_gsm_encode_char(b: char, dest: &mut Vec<u8>) -> bool {
     match b {
         'A' ... 'Z' | 'a' ... 'z' | '0' ... '9' => {
