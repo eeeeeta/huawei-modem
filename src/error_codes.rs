@@ -1,3 +1,12 @@
+//! Typed representations of modem error codes.
+
+/// A CMS (SMS-related) error code.
+///
+/// I can't be bothered to write out all the error code meanings twice. If you hit the `[src]`
+/// button in rustdoc, it'll take you to the definition of this `enum`, where the meanings of each
+/// variant are annotated with `#[fail(display)]` attributes.
+///
+/// Obviously, this means that this `enum` has a rather useful `Display` implementation.
 #[derive(FromPrimitive, Fail, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum CmsError {
     #[fail(display = "Unassigned (unallocated) number")]

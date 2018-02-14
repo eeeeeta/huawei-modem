@@ -108,8 +108,17 @@ impl PduAddress {
                     _ => None
                 }
             }).collect::<Vec<_>>();
+        let ton = if st.chars().nth(0) == Some('+') {
+            TypeOfNumber::Unknown
+        }
+        else {
+            TypeOfNumber::International
+        };
         PduAddress {
-            type_addr: Default::default(),
+            type_addr: AddressType {
+                type_of_number: ton,
+                numbering_plan_identification: NumberingPlanIdentification::IsdnTelephone
+            },
             number: PhoneNumber(buf)
         }
     }

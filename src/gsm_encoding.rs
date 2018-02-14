@@ -1,3 +1,7 @@
+//! Utilities for dealing with the (annoying) GSM 7-bit encoding.
+
+/// Lookup table for 'extended' GSM characters (characters which are encoded as `'\x1B'` plus
+/// whatever this table says). 
 pub static GSM_EXTENDED_ENCODING_TABLE: [(char, u8); 9] = [
     ('^', 0x14),
     ('{', 0x28),
@@ -9,6 +13,7 @@ pub static GSM_EXTENDED_ENCODING_TABLE: [(char, u8); 9] = [
     ('|', 0x40),
     ('\u{20AC}', 0x65)
 ];
+/// Lookup table for non-alphanumeric characters in the GSM alphabet.
 pub static GSM_ENCODING_TABLE: [(char, u8); 65] = [
     ('@', 0x00),
     ('\u{00A3}', 0x01),
@@ -76,6 +81,12 @@ pub static GSM_ENCODING_TABLE: [(char, u8); 65] = [
     ('ü', 0x7E),
     ('à', 0x7F)
 ];
+/// Decode a GSM 7-bit-encoded buffer into a string.
+///
+/// **Warning:** You need to unpack the string first; this method operates on unpacked septets, not
+/// packed septets. See the `pdu` module for more.
+///
+/// This method is lossy, and doesn't complain about crap that it can't decode.
 pub fn gsm_decode_string(input: &[u8]) -> String {
     let mut ret = String::new();
     let mut skip = false;
@@ -109,6 +120,9 @@ pub fn gsm_decode_string(input: &[u8]) -> String {
     }
     ret
 }
+/// Tries to encode a character into the given destination buffer, returning `true` if the
+/// character was successfully encoded, and `false` if the character cannot be represented in the
+/// GSM 7-bit encoding.
 pub fn try_gsm_encode_char(b: char, dest: &mut Vec<u8>) -> bool {
     match b {
         'A' ... 'Z' | 'a' ... 'z' | '0' ... '9' => {
@@ -133,6 +147,11 @@ pub fn try_gsm_encode_char(b: char, dest: &mut Vec<u8>) -> bool {
     }
     false
 }
+/// Tries to encode a string as GSM 7-bit, returning a buffer of **unpacked** septets iff all of
+/// the data in `input` was representable in the 7-bit encoding.
+///
+/// **Warning:** The output of this function is unsuitable for transmission across the network;
+/// you need to pack the septets first! See the `pdu` module for more.
 pub fn try_gsm_encode_string(input: &str) -> Option<Vec<u8>> {
     let mut ret = vec![];
     for c in input.chars() {

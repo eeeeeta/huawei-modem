@@ -1,9 +1,12 @@
+//! Contains the Tokio codec used to decode the AT protocol.
 use tokio_io::codec::{Encoder, Decoder};
 use bytes::BytesMut;
 use at::{AtCommand, AtResponse};
 use failure;
 use parse;
 
+/// Encodes AT commands into text to be sent to a modem, and decodes its responses into AT
+/// responses.
 pub struct AtCodec;
 
 impl Decoder for AtCodec {

@@ -1,37 +1,63 @@
+//! Types for dealing with AT commands and replies.
 use error_codes::CmsError;
 use std::fmt;
 use errors::{HuaweiError, HuaweiResult};
+/// An AT result code, which indicates the completion of a command.
 #[derive(Fail, Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtResultCode {
+    /// Command executed without failure.
     #[fail(display = "A command is executed, and there is no error.")]
     Ok,
+    /// Connection established.
     #[fail(display = "A connection is established.")]
     Connect,
+    /// Incoming call.
     #[fail(display = "An incoming call is originated.")]
     Ring,
+    /// Connection terminated.
     #[fail(display = "A connection is terminated.")]
     NoCarrier,
+    /// Generic error (rather unhelpful).
     #[fail(display = "A generic error occurred.")]
     Error,
+    /// CME error (= generic error), with annoyingly opaque error code (will be fixed).
+    ///
+    /// There is a list of CME errors that I should really get around to
+    /// making into an `enum`. However, that's annoying, so I haven't done
+    /// it yet.
     #[fail(display = "An error occurred: code {}", _0)]
     CmeError(u32),
+    /// Typed CMS error (= SMS-related error) that uses one of the
+    /// available error codes.
     #[fail(display = "An SMS-related error occurred: {}", _0)]
     CmsError(#[cause] CmsError),
+    /// CMS error given as string, because of modem configuration.
+    ///
+    /// There's probably some way to get modems to report errors as a numeric
+    /// error code, so you can make use of the `enum`. However, I don't know
+    /// of one.
     #[fail(display = "An unknown SMS-related error occurred: {}", _0)]
     CmsErrorString(String),
+    /// Unknown CMS error code.
     #[fail(display = "An unknown SMS-related error occurred: code {}", _0)]
     CmsErrorUnknown(u32),
+    /// No dialtone.
     #[fail(display = "There is no dialtone.")]
     NoDialtone,
+    /// Recipient busy.
     #[fail(display = "Recipient is busy.")]
     Busy,
+    /// No answer.
     #[fail(display = "No reply (timeout occurred).")]
     NoAnswer,
+    /// Command not supported.
     #[fail(display = "Command not supported.")]
     CommandNotSupported,
+    /// Too many parameters.
     #[fail(display = "Too many parameters.")]
     TooManyParameters
 }
+/// Any of a set of types used in AT commands.
 #[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtValue {
     /// A string-type value - text surrounded by "quotation marks".
@@ -40,7 +66,8 @@ pub enum AtValue {
     Integer(u32),
     /// A range of integers.
     Range((u32, u32)),
-    /// Some value of unknown type.
+    /// Some untyped value - usually 'bareword' strings, i.e. strings that aren't
+    /// surrounded in "quotation marks".
     Unknown(String),
     /// An empty value, corresponding to nothing at all.
     Empty,
@@ -51,6 +78,13 @@ pub enum AtValue {
 }
 macro_rules! at_value_impl {
     ($atv:ident, $($var:ident, $refmeth:ident, $mutmeth:ident, $asmeth:ident, $ty:ty),*) => {
+        /// This `impl` block provides methods to extract various types
+        /// out of an `AtValue`. If the value is not of the desired type,
+        /// `HuaweiError::TypeMismatch` is returned.
+        ///
+        /// - `as_x` methods take `self`, and return either the type or an error.
+        /// - `get_x` methods take `&self`, and return a `&` reference.
+        /// - `get_x_mut` methods take `&mut self`, and return a `&mut` reference.
         impl $atv {
             $(
                 pub fn $refmeth(&self) -> HuaweiResult<&$ty> {
@@ -88,6 +122,10 @@ at_value_impl!(AtValue,
                Unknown, get_unknown, get_unknown_mut, as_unknown, String,
                BracketedArray, get_bracketed_array, get_bracketed_array_mut, as_bracketed_array, Vec<AtValue>,
                Array, get_array, get_array_mut, as_array, Vec<AtValue>);
+/// Writes the `AtValue` out, as it would appear on the command line.
+///
+/// This `impl` is directly used for formatting `AtValue`s when making
+/// AT commands.
 impl fmt::Display for AtValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::AtValue::*;
@@ -115,6 +153,9 @@ impl fmt::Display for AtValue {
         Ok(())
     }
 }
+/// One of possibly many response lines to an AT command.
+///
+/// One `AtResponse` always corresponds to one line of text.
 #[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtResponse {
     /// An information response issued as a result of a command.
@@ -129,12 +170,24 @@ pub enum AtResponse {
     /// Some other unknown response.
     Unknown(String)
 }
+/// The complete set of responses to an issued AT command.
 #[derive(Debug, Clone)]
 pub struct AtResponsePacket {
+    /// The various `AtResponses` issued.
+    ///
+    /// Note that this will only contain 'expected' `InformationResponse`s,
+    /// as well as any `Unknown` responses. 'Expected' values are values
+    /// that were expected as a result of the command issued - for more
+    /// information, see the `AtCommand` documentation.
     pub responses: Vec<AtResponse>,
+    /// The final result code for this command.
     pub status: AtResultCode
 }
 impl AtResponsePacket {
+    /// Extracts the value of an `InformationResponse` that has a given `resp`
+    /// as its `param`, if such a response exists.
+    ///
+    /// Also invokes `self.assert_ok()?`, to verify that the response was successful.
     pub fn extract_named_response_opt(&self, resp: &str) -> HuaweiResult<Option<&AtValue>> {
         self.assert_ok()?;
         for r in self.responses.iter() {
@@ -146,12 +199,15 @@ impl AtResponsePacket {
         }
         Ok(None)
     }
+    /// Like `extract_named_response_opt`, but fails with a `HuaweiError::ExpectedResponse` if the
+    /// named response doesn't actually exist.
     pub fn extract_named_response(&self, resp: &str) -> HuaweiResult<&AtValue> {
         match self.extract_named_response_opt(resp)? {
             Some(val) => Ok(val),
             None => Err(HuaweiError::ExpectedResponse(resp.into()))
         }
     }
+    /// Returns `HuaweiError::AtError(self.status.clone())` if the status code was not `Ok`.
     pub fn assert_ok(&self) -> HuaweiResult<()> {
         if self.status.is_ok() {
             Ok(())
@@ -162,6 +218,15 @@ impl AtResponsePacket {
     }
 }
 impl AtCommand {
+    /// Get the set of 'expected' `InformationResponse`s for this command.
+    ///
+    /// This is used by the library to filter out URCs (Unsolicited Response Codes) - basically,
+    /// commands only get `InformationResponse`s that match their `expected()` array, so we can
+    /// filter all of the other responses out and assume that they're URCs.
+    ///
+    /// - For `Equals`, `Read`, and `Test`, this is the value of `vec![param]`.
+    /// - For `Execute` and `Basic`, this is the value of `vec![command]`.
+    /// - For `Text`, this is the value of `expected`.
     pub fn expected(&self) -> Vec<String> {
         match *self {
             AtCommand::Equals { ref param, .. } => vec![param.clone()],
@@ -173,6 +238,7 @@ impl AtCommand {
         }
     }
 }
+/// An AT command.
 #[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtCommand {
     /// Either execute a non-basic command named `param` with `value` as
@@ -212,9 +278,11 @@ pub enum AtCommand {
     /// Just send some raw text.
     Text {
         text: String,
+        /// The set of 'expected' `InformationResponse`s to this command.
         expected: Vec<String>
     }
 }
+/// Writes the `AtCommand` out, as it would appear on the command line.
 impl fmt::Display for AtCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::AtCommand::*;
