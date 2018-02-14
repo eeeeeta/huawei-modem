@@ -24,13 +24,14 @@ use tokio_io::AsyncRead;
 use futures::sync::{oneshot, mpsc};
 use future::{ModemRequest, ModemResponse, HuaweiModemFuture};
 use tokio_core::reactor::{Core, Handle};
-use pdu::{HexData, Pdu};
+use pdu::{HexData, Pdu, PduAddress, GsmMessageData};
 use std::io::prelude::*;
 pub use errors::HuaweiResult;
 pub type HuaweiFuture<T> = Box<Future<Item = T, Error = errors::HuaweiError>>;
 
 pub mod error_codes;
 pub mod errors;
+pub mod gsm_encoding;
 pub mod at;
 pub mod pdu;
 pub mod parse;
@@ -110,16 +111,20 @@ fn main() {
         Ok(())
     });
     core.handle().spawn(urcfut);
-    println!("Input data in the form smsc;recipient;message");
+    println!("Input data in the form recipient;message");
     let stdin = ::std::io::stdin();
     let lock = stdin.lock();
     for ln in lock.lines() {
         let ln = ln.unwrap();
         let ln = ln.split(";").collect::<Vec<_>>();
-        println!("Sending \"{}\" to {} (SMSC {})...", ln[2], ln[1], ln[0]);
-        let msg = Pdu::make_simple_message(ln[0], ln[1], ln[2]);
-        println!("{:?}", msg);
-        println!("{}", HexData(&msg.as_bytes().0));
+        println!("Sending \"{}\" to {}...", ln[1], ln[0]);
+        let recipient = PduAddress::from_str(ln[0]);
+        println!("Recipient: {:?}", recipient);
+        let msg = GsmMessageData::encode_message(ln[1]);
+        println!("Message data: {:?}", msg);
+        let msg = Pdu::make_simple_message(recipient, msg);
+        println!("PDU: {:?}", msg);
+        println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
         let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
         println!("Result: {:?}", core.run(fut));
     }

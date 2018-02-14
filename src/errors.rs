@@ -30,6 +30,8 @@ pub enum HuaweiError {
     TypeMismatch,
     #[fail(display = "Value out of range: {}", _0)]
     ValueOutOfRange(at::AtValue),
+    #[fail(display = "Invalid PDU: {}", _0)]
+    InvalidPdu(&'static str),
     #[fail(display = "[this should never be shown]")]
     #[doc(hidden)]
     __Nonexhaustive
