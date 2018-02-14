@@ -12,15 +12,18 @@ pub(crate) type ModemResponse = AtResponsePacket;
 
 pub(crate) struct ModemRequest {
     pub(crate) command: AtCommand,
+    pub(crate) expected: Vec<String>,
     pub(crate) notif: oneshot::Sender<ModemResponse>
 }
 struct ModemRequestState {
     notif: oneshot::Sender<ModemResponse>,
+    expected: Vec<String>,
     responses: Vec<AtResponse>
 }
 pub(crate) struct HuaweiModemFuture {
     inner: Framed<PollEvented<FileNb<File>>, AtCodec>,
     rx: mpsc::UnboundedReceiver<ModemRequest>,
+    urc: mpsc::UnboundedSender<AtResponse>,
     cur: Option<ModemRequestState>,
     requests: Vec<ModemRequest>,
     fresh: bool,
@@ -28,10 +31,11 @@ pub(crate) struct HuaweiModemFuture {
 impl HuaweiModemFuture {
     pub(crate) fn new(
         inner: Framed<PollEvented<FileNb<File>>, AtCodec>,
-        rx: mpsc::UnboundedReceiver<ModemRequest>
+        rx: mpsc::UnboundedReceiver<ModemRequest>,
+        urc: mpsc::UnboundedSender<AtResponse>
     ) -> Self {
         Self {
-            inner, rx,
+            inner, rx, urc,
             cur: None,
             requests: vec![],
             fresh: true
@@ -48,9 +52,10 @@ impl Future for HuaweiModemFuture {
             self.fresh = false;
             debug!("first poll of future, imposing initial settings");
             let (tx, _) = oneshot::channel();
-            let echo = AtCommand::Text("ATE0".into());
+            let echo = AtCommand::Basic { command: "E".into(), number: Some(0) };
             self.requests.insert(0, ModemRequest {
                 command: echo,
+                expected: vec![],
                 notif: tx
             });
         }
@@ -69,16 +74,27 @@ impl Future for HuaweiModemFuture {
                             let mut state = self.cur.take().unwrap();
                             state.responses.extend(r);
                             debug!("request completed with responses: {:?}", state.responses);
-                            let pos = state.responses.iter().position(|x| x.is_result_code())
-                                .unwrap();
-                            let res = state.responses.remove(pos);
-                            let res = if let AtResponse::ResultCode(res) = res {
-                                res
-                            }
-                            else { unreachable!() };
+                            let mut resps = vec![];
+                            let mut status = None;
+                            for resp in state.responses {
+                                match resp {
+                                    AtResponse::InformationResponse { param, response } => {
+                                        if state.expected.contains(&param) {
+                                            resps.push(AtResponse::InformationResponse { param, response });
+                                        }
+                                        else {
+                                            self.urc.unbounded_send(AtResponse::InformationResponse { param, response })?;
+                                        }
+                                    },
+                                    AtResponse::ResultCode(x) => {
+                                        status = Some(x);
+                                    },
+                                    x => resps.push(x)
+                                }
+                            };
                             let _ = state.notif.send(AtResponsePacket {
-                                responses: state.responses,
-                                status: res
+                                responses: resps,
+                                status: status.unwrap()
                             });
                         }
                         else {
@@ -88,6 +104,9 @@ impl Future for HuaweiModemFuture {
                     }
                     else {
                         warn!("got responses without any active request: {:?}", r);
+                        for resp in r {
+                            self.urc.unbounded_send(resp)?;
+                        }
                     }
                 },
                 Async::NotReady => {
@@ -112,6 +131,7 @@ impl Future for HuaweiModemFuture {
             self.inner.start_send(req.command)?;
             self.cur = Some(ModemRequestState {
                 notif: req.notif,
+                expected: req.expected,
                 responses: vec![]
             });
         }

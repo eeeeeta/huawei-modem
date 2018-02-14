@@ -159,6 +159,18 @@ impl AtResponsePacket {
         }
     }
 }
+impl AtCommand {
+    pub fn expected(&self) -> Vec<String> {
+        match *self {
+            AtCommand::Equals { ref param, .. } => vec![param.clone()],
+            AtCommand::Execute { ref command } => vec![command.clone()],
+            AtCommand::Read { ref param } => vec![param.clone()],
+            AtCommand::Test { ref param } => vec![param.clone()],
+            AtCommand::Basic { ref command, .. } => vec![command.clone()],
+            AtCommand::Text { ref expected, .. } => expected.clone(),
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtCommand {
     /// Either execute a non-basic command named `param` with `value` as
@@ -196,7 +208,10 @@ pub enum AtCommand {
         number: Option<usize>
     },
     /// Just send some raw text.
-    Text(String)
+    Text {
+        text: String,
+        expected: Vec<String>
+    }
 }
 impl fmt::Display for AtCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -212,7 +227,7 @@ impl fmt::Display for AtCommand {
                     write!(f, "{}", n)?;
                 }
             },
-            Text(ref t) => write!(f, "{}", t)?
+            Text { ref text, .. } => write!(f, "{}", text)?
         }
         Ok(())
     }

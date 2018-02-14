@@ -18,7 +18,7 @@ extern crate num;
 use std::fs::{File, OpenOptions};
 use tokio_file_unix::File as FileNb;
 use codec::AtCodec;
-use at::{AtCommand};
+use at::{AtResponse, AtCommand};
 use futures::{Future, Poll};
 use tokio_io::AsyncRead;
 use futures::sync::{oneshot, mpsc};
@@ -57,7 +57,8 @@ impl Future for ModemResponseFuture {
     }
 }
 pub struct HuaweiModem {
-    tx: mpsc::UnboundedSender<ModemRequest>
+    tx: mpsc::UnboundedSender<ModemRequest>,
+    urc: Option<mpsc::UnboundedReceiver<AtResponse>>
 }
 impl HuaweiModem {
     pub fn new_from_path<P: AsRef<Path>>(path: P, h: &Handle) -> HuaweiResult<Self> {
@@ -71,18 +72,24 @@ impl HuaweiModem {
         let ev = FileNb::new_nb(f)?.into_io(h)?;
         let framed = ev.framed(AtCodec);
         let (tx, rx) = mpsc::unbounded();
-        let fut = HuaweiModemFuture::new(framed, rx);
+        let (urctx, urcrx) = mpsc::unbounded();
+        let fut = HuaweiModemFuture::new(framed, rx, urctx);
         h.spawn(fut.map_err(|e| {
             error!("HuaweiModemFuture failed: {}", e);
             ()
         }));
-        Ok(Self { tx })
+        Ok(Self { tx, urc: Some(urcrx) })
+    }
+    pub fn take_urc_rx(&mut self) -> Option<mpsc::UnboundedReceiver<AtResponse>> {
+        self.urc.take()
     }
     pub fn send_raw(&mut self, cmd: AtCommand) -> ModemResponseFuture {
         let (tx, rx) = oneshot::channel();
+        let expected = cmd.expected();
         let req = ModemRequest {
             command: cmd,
-            notif: tx
+            notif: tx,
+            expected
         };
         if let Err(_) = self.tx.unbounded_send(req) {
             ModemResponseFuture { rx: Err(()) }
@@ -93,9 +100,16 @@ impl HuaweiModem {
     }
 }
 fn main() {
+    use futures::Stream;
+
     env_logger::init().unwrap();
     let mut core = Core::new().unwrap();
-    let mut modem = HuaweiModem::new_from_path("/dev/ttyUSB0", &core.handle()).unwrap();
+    let mut modem = HuaweiModem::new_from_path("/dev/ttyUSB2", &core.handle()).unwrap();
+    let urcfut = modem.take_urc_rx().unwrap().for_each(|item| {
+        println!("URC: {:?}", item);
+        Ok(())
+    });
+    core.handle().spawn(urcfut);
     println!("Input data in the form smsc;recipient;message");
     let stdin = ::std::io::stdin();
     let lock = stdin.lock();

@@ -125,8 +125,9 @@ named!(pub parse_single_value(&[u8]) -> AtValue,
 named!(pub parse_information_response(&[u8]) -> (String, AtValue),
        map!(
            do_parse!(
-               param: take_until_s!(": ") >>
-               tag!(": ") >>
+               param: take_until_s!(":") >>
+               tag!(":") >>
+               opt!(tag!(" ")) >>
                response: parse_value >>
                (param, response)
            ),

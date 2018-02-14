@@ -77,7 +77,7 @@ impl PinState {
     }
 }
 pub fn get_registration(modem: &mut HuaweiModem) -> impl Future<Item = RegistrationState, Error = HuaweiError> {
-    modem.send_raw(AtCommand::Read { param: "+CREG".into()})
+    modem.send_raw(AtCommand::Read { param: "+CREG".into() })
         .and_then(|pkt| {
             let reg = pkt.extract_named_response("+CREG")?
                 .get_array()?
