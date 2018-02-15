@@ -14,6 +14,7 @@ extern crate bytes;
 #[macro_use] extern crate derive_is_enum_variant;
 extern crate num;
 #[macro_use] extern crate num_derive;
+extern crate rand;
 
 use std::fs::{File, OpenOptions};
 use tokio_file_unix::File as FileNb;
@@ -143,12 +144,14 @@ fn main() {
         println!("Recipient: {:?}", recipient);
         let msg = GsmMessageData::encode_message(ln[1]);
         println!("Message data: {:?}", msg);
-        let msg = Pdu::make_simple_message(recipient, msg);
-        println!("PDU: {:?}", msg);
-        println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
-        let pdu = Pdu::try_from(&msg.as_bytes().0 as &[u8]).unwrap();
-        assert_eq!(pdu, msg);
-        let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
-        println!("Result: {:?}", core.run(fut));
+        for msg in msg {
+            let msg = Pdu::make_simple_message(recipient.clone(), msg);
+            println!("PDU: {:?}", msg);
+            println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
+            let pdu = Pdu::try_from(&msg.as_bytes().0 as &[u8]).unwrap();
+            assert_eq!(pdu, msg);
+            let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
+            println!("Result: {:?}", core.run(fut));
+        }
     }
 }

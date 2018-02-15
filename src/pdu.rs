@@ -4,6 +4,62 @@ use num::FromPrimitive;
 use std::convert::{Infallible, TryFrom};
 use errors::*;
 
+macro_rules! check_offset {
+    ($b:ident, $offset:ident, $reason:expr) => {
+        if $b.get($offset).is_none() {
+            return Err(HuaweiError::InvalidPdu(concat!("Offset check failed for: ", $reason)));
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UdhComponent {
+    pub id: u8,
+    pub data: Vec<u8>
+}
+#[derive(Debug, Clone)]
+pub struct UserDataHeader {
+    pub components: Vec<UdhComponent>
+}
+impl UserDataHeader {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut ret = vec![];
+        for comp in self.components.iter() {
+            ret.push(comp.id);
+            ret.push(comp.data.len() as u8);
+            ret.extend(comp.data.clone());
+        }
+        let len = ret.len() as u8;
+        ret.insert(0, len);
+        ret
+    }
+}
+impl<'a> TryFrom<&'a [u8]> for UserDataHeader {
+    type Error = HuaweiError;
+    /// Accepts a UDH *without* the UDH Length octet at the start.
+    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
+        let mut offset = 0;
+        let mut ret = vec![];
+        loop {
+            if b.get(offset).is_none() {
+                break;
+            }
+            let id = b[offset];
+            offset += 1;
+            check_offset!(b, offset, "UDH component length");
+            let len = b[offset];
+            let end = offset + len as usize;
+            let o = end - 1;
+            check_offset!(b, o, "UDH component data");
+            let data = b[offset..end].to_owned();
+            offset = end;
+            ret.push(UdhComponent { id, data });
+        }
+        Ok(UserDataHeader {
+            components: ret
+        })
+    }
+}
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum TypeOfNumber {
@@ -422,19 +478,13 @@ pub struct DeliverPdu {
     pub user_data: Vec<u8>,
     pub user_data_len: u8
 }
-macro_rules! check_offset {
-    ($b:ident, $offset:ident, $reason:expr) => {
-        if $b.get($offset).is_none() {
-            return Err(HuaweiError::InvalidPdu(concat!("Offset check failed for: ", $reason)));
-        }
-    }
-}
 impl DeliverPdu {
     pub fn get_message_data(&self) -> GsmMessageData {
         GsmMessageData {
             bytes: self.user_data.clone(),
-            user_data_len: self.user_data_len as _,
-            encoding: self.dcs.encoding()
+            user_data_len: self.user_data_len,
+            encoding: self.dcs.encoding(),
+            udh: self.first_octet.udhi
         }
     }
 }
@@ -518,7 +568,7 @@ impl Pdu {
                 rd: false,
                 vpf: VpFieldValidity::Invalid,
                 rp: false,
-                udhi: false,
+                udhi: msg.udh,
                 srr: false
             },
             message_id: 0,
@@ -648,11 +698,23 @@ impl<'a> HexData<'a> {
             .collect()
     }
 }
+pub fn split_buffers(buf: Vec<u8>, max_len: usize) -> Vec<Vec<u8>> {
+    let mut ret = vec![];
+    let mut cbuf = buf;
+    while max_len < cbuf.len() {
+        let split = cbuf.split_off(max_len);
+        let old = ::std::mem::replace(&mut cbuf, split);
+        ret.push(old);
+    }
+    ret.push(cbuf);
+    ret
+}
 #[derive(Debug, Clone)]
 pub struct GsmMessageData {
     encoding: MessageEncoding,
+    udh: bool,
     bytes: Vec<u8>,
-    user_data_len: usize
+    user_data_len: u8
 }
 impl GsmMessageData {
     pub fn encoding(&self) -> &MessageEncoding {
@@ -661,7 +723,7 @@ impl GsmMessageData {
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
-    pub fn user_data_len(&self) -> usize {
+    pub fn user_data_len(&self) -> u8 {
         self.user_data_len
     }
     pub fn decode_message(&self) -> Option<String> {
@@ -680,27 +742,88 @@ impl GsmMessageData {
             _ => None
         }
     }
-    pub fn encode_message(msg: &str) -> GsmMessageData {
+    pub fn encode_message(msg: &str) -> Vec<GsmMessageData> {
         use encoding::{Encoding, EncoderTrap};
         use encoding::all::UTF_16BE;
+        use rand;
         use gsm_encoding;
 
         if let Some(buf) = gsm_encoding::try_gsm_encode_string(msg) {
             let user_data_len = buf.len();
-            let buf = encode_sms_7bit(&buf);
-            GsmMessageData {
-                encoding: MessageEncoding::Gsm7Bit,
-                bytes: buf,
-                user_data_len
+            if user_data_len > 160 {
+                // time to make a Concatenated SMS
+                let bufs = split_buffers(buf, 153);
+                let csms_ref = rand::random::<u8>();
+                let num_parts = bufs.len() as u8;
+                bufs.into_iter()
+                    .enumerate()
+                    .map(|(i, buf)| {
+                        let udh = UserDataHeader {
+                            components: vec![UdhComponent {
+                                id: 0,
+                                data: vec![csms_ref, num_parts, i as u8 + 1]
+                            }]
+                        };
+                        let mut ret = udh.as_bytes();
+                        let padding = 7 - ((ret.len() * 8) % 7);
+                        let len = ((ret.len() * 8) + padding + (buf.len() * 7)) / 7;
+                        let enc = encode_sms_7bit(&buf, padding);
+                        ret.extend(enc);
+                        GsmMessageData {
+                            encoding: MessageEncoding::Gsm7Bit,
+                            bytes: ret,
+                            udh: true,
+                            user_data_len: len as u8
+                        }
+                    })
+                    .collect()
+            }
+            else {
+                let buf = encode_sms_7bit(&buf, 0);
+                vec![GsmMessageData {
+                    encoding: MessageEncoding::Gsm7Bit,
+                    bytes: buf,
+                    udh: false,
+                    user_data_len: user_data_len as u8
+                }]
             }
         }
         else {
             let buf = UTF_16BE.encode(msg, EncoderTrap::Replace).unwrap();
             let user_data_len = buf.len();
-            GsmMessageData {
-                encoding: MessageEncoding::Ucs2,
-                bytes: buf,
-                user_data_len
+            if user_data_len > 140 {
+                // time to make a Concatenated SMS
+                let bufs = split_buffers(buf, 134);
+                let csms_ref = rand::random::<u8>();
+                let num_parts = bufs.len() as u8;
+                bufs.into_iter()
+                    .enumerate()
+                    .map(|(i, buf)| {
+                        let udh = UserDataHeader {
+                            components: vec![UdhComponent {
+                                id: 0,
+                                data: vec![csms_ref, num_parts, i as u8 + 1]
+                            }]
+                        };
+                        let mut ret = udh.as_bytes();
+                        ret.extend(buf);
+                        let len = ret.len();
+                        GsmMessageData {
+                            encoding: MessageEncoding::Ucs2,
+                            bytes: ret,
+                            udh: true,
+                            user_data_len: len as u8
+                        }
+                    })
+                    .collect()
+            }
+            else {
+                vec![GsmMessageData {
+                    encoding: MessageEncoding::Ucs2,
+                    bytes: buf,
+                    udh: false,
+                    user_data_len: user_data_len as u8
+                }]
             }
         }
     }
@@ -726,10 +849,16 @@ pub fn decode_sms_7bit(orig: &[u8]) -> Vec<u8> {
     }
     ret
 }
-pub fn encode_sms_7bit(orig: &[u8]) -> Vec<u8> {
+pub fn encode_sms_7bit(orig: &[u8], padding: usize) -> Vec<u8> {
     let mut ret = vec![];
     // Number of bits in the current octet that come from the current septet.
     let mut chars_cur = 7;
+    if padding > 0 && orig.len() > 0 {
+        chars_cur = padding;
+        let cur = orig[0] << padding;
+        ret.push(cur);
+        chars_cur -= 1;
+    }
     for (i, data) in orig.iter().enumerate() {
         if chars_cur == 0 {
             chars_cur = 7;
