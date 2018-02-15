@@ -3,6 +3,7 @@ use at::*;
 use errors::*;
 use futures::Future;
 use pdu::{HexData, Pdu, DeliverPdu};
+use std::convert::TryFrom;
 use util::HuaweiFromPrimitive;
 
 #[repr(u8)]
@@ -51,7 +52,7 @@ pub fn list_sms_pdu(modem: &mut HuaweiModem, status: MessageStatus) -> impl Futu
                     if st.trim().len() > 0 {
                         let cur = cur.take().ok_or(HuaweiError::TypeMismatch)?;
                         let hex = HexData::decode(st.trim())?;
-                        let pdu = DeliverPdu::from_bytes(&hex)?;
+                        let pdu = DeliverPdu::try_from(&hex as &[u8])?;
                         ret.push(SmsMessage {
                             index: cur.0,
                             status: cur.1,

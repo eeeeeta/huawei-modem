@@ -1,5 +1,7 @@
 use std::fmt;
+use std::str::FromStr;
 use num::FromPrimitive;
+use std::convert::{Infallible, TryFrom};
 use errors::*;
 
 #[repr(u8)]
@@ -37,8 +39,9 @@ impl Default for AddressType {
         }
     }
 }
-impl AddressType {
-    pub fn from_u8(b: u8) -> HuaweiResult<Self>  {
+impl TryFrom<u8> for AddressType {
+    type Error = HuaweiError;
+    fn try_from(b: u8) -> HuaweiResult<Self>  {
         let ton = b & 0b0_111_0000;
         let ton = TypeOfNumber::from_u8(ton)
             .ok_or(HuaweiError::InvalidPdu("invalid type_of_number"))?;
@@ -50,7 +53,9 @@ impl AddressType {
             numbering_plan_identification: npi
         })
     }
-    pub fn as_u8(self) -> u8 {
+}
+impl Into<u8> for AddressType {
+    fn into(self) -> u8 {
         let mut ret: u8 = 0b1_000_0000;
         ret |= self.type_of_number as u8;
         ret |= self.numbering_plan_identification as u8;
@@ -59,8 +64,8 @@ impl AddressType {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhoneNumber(pub Vec<u8>);
-impl PhoneNumber {
-    pub fn from_bytes(b: &[u8]) -> Self {
+impl<'a> From<&'a [u8]> for PhoneNumber {
+    fn from(b: &[u8]) -> Self {
         let mut ret = vec![];
         for b in b.iter() {
             let first = b & 0b0000_1111;
@@ -72,6 +77,8 @@ impl PhoneNumber {
         }
         PhoneNumber(ret)
     }
+}
+impl PhoneNumber {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
         let mut cur = 0b0000_0000;
@@ -99,8 +106,9 @@ pub struct PduAddress {
     pub type_addr: AddressType,
     pub number: PhoneNumber
 }
-impl PduAddress {
-    pub fn from_str(st: &str) -> Self {
+impl FromStr for PduAddress {
+    type Err = Infallible;
+    fn from_str(st: &str) -> Result<Self, Infallible> {
         let buf = st.chars()
             .filter_map(|x| {
                 match x {
@@ -114,25 +122,30 @@ impl PduAddress {
         else {
             TypeOfNumber::International
         };
-        PduAddress {
+        Ok(PduAddress {
             type_addr: AddressType {
                 type_of_number: ton,
                 numbering_plan_identification: NumberingPlanIdentification::IsdnTelephone
             },
             number: PhoneNumber(buf)
-        }
+        })
     }
-    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+}
+impl<'a> TryFrom<&'a [u8]> for PduAddress {
+    type Error = HuaweiError;
+    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
         if b.len() < 2 {
             Err(HuaweiError::InvalidPdu("tried to make a PduAddress from less than 2 bytes"))?
         }
-        let type_addr = AddressType::from_u8(b[0])?;
-        let number = PhoneNumber::from_bytes(&b[1..]);
+        let type_addr = AddressType::try_from(b[0])?;
+        let number = PhoneNumber::from(&b[1..]);
         Ok(PduAddress { type_addr, number })
     }
+}
+impl PduAddress {
     pub fn as_bytes(&self, broken_len: bool) -> Vec<u8> {
         let mut ret = vec![];
-        ret.push(self.type_addr.as_u8());
+        ret.push(self.type_addr.into());
         ret.extend(self.number.as_bytes());
         let len = if broken_len {
             self.number.0.len()
@@ -168,8 +181,8 @@ pub struct PduFirstOctet {
     udhi: bool,
     rp: bool
 }
-impl PduFirstOctet {
-    pub fn from_u8(b: u8) -> Self {
+impl From<u8> for PduFirstOctet {
+    fn from(b: u8) -> Self {
         let rd = (b & 0b00000100) > 0;
         let srr = (b & 0b00100000) > 0;
         let udhi = (b & 0b01000000) > 0;
@@ -180,7 +193,9 @@ impl PduFirstOctet {
             .expect("VpFieldValidity conversions should be exhaustive!");
         PduFirstOctet { rd, srr, udhi, rp, mti, vpf }
     }
-    pub fn as_u8(self) -> u8 {
+}
+impl Into<u8> for PduFirstOctet {
+    fn into(self) -> u8 {
         let mut ret = 0b0000_0000;
         ret |= self.mti as u8;
         ret |= self.vpf as u8;
@@ -232,7 +247,9 @@ impl DataCodingScheme {
             }
         }
     }
-    pub fn from_u8(b: u8) -> Self {
+}
+impl From<u8> for DataCodingScheme {
+    fn from(b: u8) -> Self {
         if (b & 0b1100_0000) == 0b0000_0000 {
             let compressed = (b & 0b0010_0000) > 0;
             let reserved = (b & 0b0001_0000) > 0;
@@ -278,9 +295,11 @@ impl DataCodingScheme {
             DataCodingScheme::Reserved
         }
     }
-    pub fn as_u8(&self) -> u8 {
+}
+impl Into<u8> for DataCodingScheme {
+    fn into(self) -> u8 {
         use self::DataCodingScheme::*;
-        match *self {
+        match self {
             Standard { compressed, class, encoding } => {
                 let mut ret = 0b0001_0000;
                 if compressed {
@@ -346,8 +365,8 @@ pub struct DeliverPduFirstOctet {
     udhi: bool,
     rp: bool
 }
-impl DeliverPduFirstOctet {
-    pub fn from_u8(b: u8) -> Self {
+impl From<u8> for DeliverPduFirstOctet {
+    fn from(b: u8) -> Self {
         let mti = MessageType::from_u8(b & 0b000000_11)
             .expect("MessageType conversions should be exhaustive!");
         let sri = (b & 0b00100000) > 0;
@@ -371,8 +390,9 @@ pub fn reverse_byte(b: u8) -> u8 {
     let tens = b & 0b0000_1111;
     (tens * 10) + units
 }
-impl SmscTimestamp {
-    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+impl<'a> TryFrom<&'a [u8]> for SmscTimestamp {
+    type Error = HuaweiError;
+    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
         if b.len() != 7 {
             Err(HuaweiError::InvalidPdu("SmscTimestamp must be 7 bytes long"))?
         }
@@ -412,19 +432,22 @@ impl DeliverPdu {
             encoding: self.dcs.encoding()
         }
     }
-    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+}
+impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
+    type Error = HuaweiError;
+    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
         let scalen = b[0];
         let mut offset: usize = scalen as usize + 1;
         let sca = if scalen > 0 {
             let o = offset - 1;
             check_offset!(b, o, "SCA");
-            Some(PduAddress::from_bytes(&b[1..offset])?)
+            Some(PduAddress::try_from(&b[1..offset])?)
         }
         else {
             None
         };
         check_offset!(b, offset, "first octet");
-        let first_octet = DeliverPduFirstOctet::from_u8(b[offset]);
+        let first_octet = DeliverPduFirstOctet::from(b[offset]);
         offset += 1;
         check_offset!(b, offset, "originating address len");
         let destination_len = b[offset];
@@ -433,18 +456,18 @@ impl DeliverPdu {
         let destination_end = offset + (real_len as usize);
         let de = destination_end - 1;
         check_offset!(b, de, "originating address");
-        let originating_address = PduAddress::from_bytes(&b[offset..destination_end])?;
+        let originating_address = PduAddress::try_from(&b[offset..destination_end])?;
         offset += real_len as usize;
         check_offset!(b, offset, "protocol identifier");
         let _pid = b[offset];
         offset += 1;
         check_offset!(b, offset, "data coding scheme");
-        let dcs = DataCodingScheme::from_u8(b[offset]);
+        let dcs = DataCodingScheme::from(b[offset]);
         offset += 1;
         let scts_end = offset + 7;
         let ss = offset + 6;
         check_offset!(b, ss, "service center timestamp");
-        let scts = SmscTimestamp::from_bytes(&b[offset..scts_end])?;
+        let scts = SmscTimestamp::try_from(&b[offset..scts_end])?;
         offset += 7;
         check_offset!(b, offset, "user data len");
         let user_data_len = b[offset];
@@ -505,19 +528,22 @@ impl Pdu {
             user_data_len: msg.user_data_len as u8
         }
     }
-    pub fn from_bytes(b: &[u8]) -> HuaweiResult<Self> {
+}
+impl<'a> TryFrom<&'a [u8]> for Pdu {
+    type Error = HuaweiError;
+    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
         let scalen = b[0];
         let mut offset: usize = scalen as usize + 1;
         let sca = if scalen > 0 {
             let o = offset - 1;
             check_offset!(b, o, "SCA");
-            Some(PduAddress::from_bytes(&b[1..offset])?)
+            Some(PduAddress::try_from(&b[1..offset])?)
         }
         else {
             None
         };
         check_offset!(b, offset, "first octet");
-        let first_octet = PduFirstOctet::from_u8(b[offset]);
+        let first_octet = PduFirstOctet::from(b[offset]);
         offset += 1;
         check_offset!(b, offset, "message ID");
         let message_id = b[offset];
@@ -529,13 +555,13 @@ impl Pdu {
         let destination_end = offset + (real_len as usize);
         let de = destination_end - 1;
         check_offset!(b, de, "destination address");
-        let destination = PduAddress::from_bytes(&b[offset..destination_end])?;
+        let destination = PduAddress::try_from(&b[offset..destination_end])?;
         offset += real_len as usize;
         check_offset!(b, offset, "protocol identifier");
         let _pid = b[offset];
         offset += 1;
         check_offset!(b, offset, "data coding scheme");
-        let dcs = DataCodingScheme::from_u8(b[offset]);
+        let dcs = DataCodingScheme::from(b[offset]);
         offset += 1;
         let validity_period = if first_octet.vpf != VpFieldValidity::Invalid {
             check_offset!(b, offset, "validity period");
@@ -566,6 +592,8 @@ impl Pdu {
             user_data_len
         })
     }
+}
+impl Pdu {
     pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
         let mut scalen = 1;
@@ -577,11 +605,11 @@ impl Pdu {
         else {
             ret.push(0);
         }
-        ret.push(self.first_octet.as_u8());
+        ret.push(self.first_octet.into());
         ret.push(self.message_id);
         ret.extend(self.destination.as_bytes(true));
         ret.push(0);
-        ret.push(self.dcs.as_u8());
+        ret.push(self.dcs.into());
         if self.first_octet.vpf != VpFieldValidity::Invalid {
             ret.push(self.validity_period);
         }

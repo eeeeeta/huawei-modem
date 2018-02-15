@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait, try_from)]
 
 extern crate futures;
 extern crate tokio_core;
@@ -26,6 +26,7 @@ use future::{ModemRequest, ModemResponse, HuaweiModemFuture};
 use tokio_core::reactor::{Core, Handle};
 use pdu::{HexData, Pdu, PduAddress, GsmMessageData};
 use std::io::prelude::*;
+use std::convert::TryFrom;
 pub use errors::HuaweiResult;
 pub type HuaweiFuture<T> = Box<Future<Item = T, Error = errors::HuaweiError>>;
 
@@ -133,13 +134,13 @@ fn main() {
         }
         let ln = ln.split(";").collect::<Vec<_>>();
         println!("Sending \"{}\" to {}...", ln[1], ln[0]);
-        let recipient = PduAddress::from_str(ln[0]);
+        let recipient: PduAddress = ln[0].parse().unwrap();
         println!("Recipient: {:?}", recipient);
         let msg = GsmMessageData::encode_message(ln[1]);
         println!("Message data: {:?}", msg);
         let msg = Pdu::make_simple_message(recipient, msg);
         println!("PDU: {:?}", msg);
-        let pdu = Pdu::from_bytes(&msg.as_bytes().0).unwrap();
+        let pdu = Pdu::try_from(&msg.as_bytes().0 as &[u8]).unwrap();
         assert_eq!(pdu, msg);
         println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
         let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
