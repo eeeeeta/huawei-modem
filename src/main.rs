@@ -115,6 +115,11 @@ fn main() {
     println!("Setting textmode false...");
     let fut = cmd::sms::set_sms_textmode(&mut modem, false);
     println!("Result: {:?}", core.run(fut));
+    println!("Setting new message indications...");
+    let fut = cmd::sms::set_new_message_indications(&mut modem,
+                                                    cmd::sms::NewMessageNotification::SendDirectlyOrBuffer,
+                                                    cmd::sms::NewMessageStorage::StoreAndNotify);
+    println!("Result: {:?}", core.run(fut));
     println!("Input data in the form recipient;message");
     let stdin = ::std::io::stdin();
     let lock = stdin.lock();
@@ -140,9 +145,9 @@ fn main() {
         println!("Message data: {:?}", msg);
         let msg = Pdu::make_simple_message(recipient, msg);
         println!("PDU: {:?}", msg);
+        println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
         let pdu = Pdu::try_from(&msg.as_bytes().0 as &[u8]).unwrap();
         assert_eq!(pdu, msg);
-        println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
         let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
         println!("Result: {:?}", core.run(fut));
     }

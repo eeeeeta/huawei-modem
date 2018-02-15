@@ -109,18 +109,23 @@ pub struct PduAddress {
 impl FromStr for PduAddress {
     type Err = Infallible;
     fn from_str(st: &str) -> Result<Self, Infallible> {
+        let mut int = false;
         let buf = st.chars()
             .filter_map(|x| {
                 match x {
                     '0'...'9' => Some(x as u8 - 48),
+                    '+' => {
+                        int = true;
+                        None
+                    },
                     _ => None
                 }
             }).collect::<Vec<_>>();
-        let ton = if st.chars().nth(0) == Some('+') {
-            TypeOfNumber::Unknown
+        let ton = if int {
+            TypeOfNumber::International
         }
         else {
-            TypeOfNumber::International
+            TypeOfNumber::Unknown
         };
         Ok(PduAddress {
             type_addr: AddressType {
@@ -551,7 +556,7 @@ impl<'a> TryFrom<&'a [u8]> for Pdu {
         check_offset!(b, offset, "destination len");
         let destination_len = b[offset];
         offset += 1;
-        let real_len = (destination_len / 2) + 1;
+        let real_len = (destination_len / 2) + destination_len % 2 + 1;
         let destination_end = offset + (real_len as usize);
         let de = destination_end - 1;
         check_offset!(b, de, "destination address");
