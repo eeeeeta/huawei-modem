@@ -48,7 +48,8 @@ impl<'a> TryFrom<&'a [u8]> for UserDataHeader {
             offset += 1;
             check_offset!(b, offset, "UDH component length");
             let len = b[offset];
-            let end = offset + len as usize;
+            let end = offset + len as usize + 1;
+            offset += 1;
             let o = end - 1;
             check_offset!(b, o, "UDH component data");
             let data = b[offset..end].to_owned();
@@ -716,6 +717,10 @@ pub struct GsmMessageData {
     bytes: Vec<u8>,
     user_data_len: u8
 }
+pub struct DecodedMessage {
+    pub text: String,
+    pub udh: Option<UserDataHeader>
+}
 impl GsmMessageData {
     pub fn encoding(&self) -> &MessageEncoding {
         &self.encoding
@@ -726,20 +731,46 @@ impl GsmMessageData {
     pub fn user_data_len(&self) -> u8 {
         self.user_data_len
     }
-    pub fn decode_message(&self) -> Option<String> {
+    pub fn decode_message(&self) -> HuaweiResult<DecodedMessage> {
         use encoding::{Encoding, DecoderTrap};
         use encoding::all::UTF_16BE;
         use gsm_encoding;
-
+        let mut padding = 0;
+        let mut start = 0;
+        let mut udh = None;
+        if self.udh {
+            if self.bytes.len() < 1 {
+                Err(HuaweiError::InvalidPdu("UDHI specified, but no data"))?
+            }
+            let udhl = self.bytes[0] as usize;
+            padding = 7 - (((udhl + 1) * 8) % 7);
+            start = udhl + 1;
+            if self.bytes.len() < start {
+                Err(HuaweiError::InvalidPdu("UDHL goes past end of data"))?
+            }
+            udh = Some(UserDataHeader::try_from(&self.bytes[1..start])?);
+        }
+        if self.bytes.get(start).is_none() {
+            return Ok(DecodedMessage {
+                text: String::new(),
+                udh
+            });
+        }
         match self.encoding {
             MessageEncoding::Gsm7Bit => {
-                let buf = decode_sms_7bit(&self.bytes);
-                Some(gsm_encoding::gsm_decode_string(&buf))
+                let buf = decode_sms_7bit(&self.bytes[start..], padding);
+                Ok(DecodedMessage {
+                    text: gsm_encoding::gsm_decode_string(&buf),
+                    udh
+                })
             },
             MessageEncoding::Ucs2 => {
-                Some(UTF_16BE.decode(&self.bytes, DecoderTrap::Replace).unwrap())
+                Ok(DecodedMessage {
+                    text: UTF_16BE.decode(&self.bytes[start..], DecoderTrap::Replace).unwrap(),
+                    udh
+                })
             },
-            _ => None
+            x => Err(HuaweiError::UnsupportedEncoding(x, self.bytes.clone()))
         }
     }
     pub fn encode_message(msg: &str) -> Vec<GsmMessageData> {
@@ -828,10 +859,15 @@ impl GsmMessageData {
         }
     }
 }
-pub fn decode_sms_7bit(orig: &[u8]) -> Vec<u8> {
+// This function wins the "I spent a *goddamn hour* debugging this crap" award.
+// The best part? The bug wasn't even in this function...!
+pub fn decode_sms_7bit(orig: &[u8], padding: usize) -> Vec<u8> {
     let mut ret = vec![0];
     let mut chars_cur = 7;
     let mut i = 0;
+    if padding > 0 && orig.len() > 0 {
+        chars_cur = padding;
+    }
     for (j, data) in orig.iter().enumerate() {
         if chars_cur == 0 {
             chars_cur = 7;
@@ -841,11 +877,16 @@ pub fn decode_sms_7bit(orig: &[u8]) -> Vec<u8> {
         let next = data >> chars_cur;
         let mut cur = ((data << (8 - chars_cur)) >> (8 - chars_cur)) << (7 - chars_cur);
         ret[i] |= cur;
-        if j+1 < orig.len() {
+        // XXX: This i == 152 condition is a hack. For some reason,
+        // we need to push the last bit for full SMSes, but not for others?
+        if j+1 < orig.len() || i == 152 {
             ret.push(next);
         }
         chars_cur -= 1;
         i += 1;
+    }
+    if padding > 0 && ret.len() > 0 {
+        ret.remove(0);
     }
     ret
 }

@@ -1,6 +1,7 @@
 //! Error handling.
 use std::io;
 use futures::sync::oneshot::Canceled;
+use pdu::MessageEncoding;
 use at;
 use failure::Fail;
 
@@ -50,6 +51,9 @@ pub enum HuaweiError {
     /// An error occured parsing a PDU.
     #[fail(display = "Invalid PDU: {}", _0)]
     InvalidPdu(&'static str),
+    /// Unsupported user data encoding. The raw bytes are provided for your edification.
+    #[fail(display = "Data of unknown encoding {:?}: {:?}", _0, _1)]
+    UnsupportedEncoding(MessageEncoding, Vec<u8>),
     /// This shouldn't be shown, and is designed to stop you matching on this `enum` exhaustively.
     /// If you do that, yo' code gonna break!
     #[fail(display = "[this should never be shown]")]

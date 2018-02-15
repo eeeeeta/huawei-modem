@@ -132,7 +132,18 @@ fn main() {
                 .map(|v| {
                     for msg in v {
                         println!("Message: {:?}", msg);
-                        println!("Text: {}", msg.pdu.get_message_data().decode_message().unwrap_or("[unreadable]".into()));
+                        let dec = msg.pdu.get_message_data().decode_message();
+                        match dec {
+                            Ok(dm) => {
+                                println!("Text: {}", dm.text);
+                                if let Some(u) = dm.udh {
+                                    println!("User data header: {:?}", u);
+                                }
+                            },
+                            Err(e) => {
+                                println!("Decode failed: {}", e);
+                            },
+                        }
                     }
                 });
             println!("Result: {:?}", core.run(fut));
