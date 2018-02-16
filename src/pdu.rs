@@ -163,6 +163,21 @@ pub struct PduAddress {
     pub type_addr: AddressType,
     pub number: PhoneNumber
 }
+impl fmt::Display for PduAddress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // XXX: We don't display GSM numbers correctly.
+        let prefix = match self.type_addr.type_of_number {
+            TypeOfNumber::International => "+",
+            TypeOfNumber::Gsm => "[GSM] ",
+            _ => ""
+        };
+        write!(f, "{}", prefix)?;
+        for b in self.number.0.iter() {
+            write!(f, "{}", b)?;
+        }
+        Ok(())
+    }
+}
 impl FromStr for PduAddress {
     type Err = Infallible;
     fn from_str(st: &str) -> Result<Self, Infallible> {

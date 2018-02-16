@@ -103,7 +103,6 @@ impl Future for HuaweiModemFuture {
                         }
                     }
                     else {
-                        warn!("got responses without any active request: {:?}", r);
                         for resp in r {
                             self.urc.unbounded_send(resp)?;
                         }
