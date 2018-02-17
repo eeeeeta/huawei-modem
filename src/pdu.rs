@@ -136,6 +136,9 @@ impl<'a> From<&'a [u8]> for PhoneNumber {
     }
 }
 impl PhoneNumber {
+    pub fn from_gsm(b: &[u8]) -> Self {
+        PhoneNumber(decode_sms_7bit(b, 0))
+    }
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
         let mut cur = 0b0000_0000;
@@ -165,15 +168,20 @@ pub struct PduAddress {
 }
 impl fmt::Display for PduAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // XXX: We don't display GSM numbers correctly.
+        use gsm_encoding;
+
         let prefix = match self.type_addr.type_of_number {
             TypeOfNumber::International => "+",
-            TypeOfNumber::Gsm => "[GSM] ",
             _ => ""
         };
         write!(f, "{}", prefix)?;
-        for b in self.number.0.iter() {
-            write!(f, "{}", b)?;
+        if self.type_addr.type_of_number == TypeOfNumber::Gsm {
+            write!(f, "{}", gsm_encoding::gsm_decode_string(&self.number.0))?;
+        }
+        else {
+            for b in self.number.0.iter() {
+                write!(f, "{}", b)?;
+            }
         }
         Ok(())
     }
@@ -215,7 +223,12 @@ impl<'a> TryFrom<&'a [u8]> for PduAddress {
             Err(HuaweiError::InvalidPdu("tried to make a PduAddress from less than 2 bytes"))?
         }
         let type_addr = AddressType::try_from(b[0])?;
-        let number = PhoneNumber::from(&b[1..]);
+        let number = if type_addr.type_of_number == TypeOfNumber::Gsm {
+            PhoneNumber::from_gsm(&b[1..])
+        }
+        else {
+            PhoneNumber::from(&b[1..])
+        };
         Ok(PduAddress { type_addr, number })
     }
 }
@@ -523,17 +536,17 @@ impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
         check_offset!(b, offset, "originating address len");
         let destination_len = b[offset];
         offset += 1;
-        let real_len = (destination_len / 2) + 1;
+        check_offset!(b, offset, "originating address type");
+        let mut real_len = (destination_len / 2) + 1;
+        let type_addr = AddressType::try_from(b[offset])?;
+        if type_addr.type_of_number == TypeOfNumber::Gsm {
+            // XXX: a trifle hacky
+            real_len += 1;
+        }
         let destination_end = offset + (real_len as usize);
         let de = destination_end - 1;
         check_offset!(b, de, "originating address");
         let originating_address = PduAddress::try_from(&b[offset..destination_end])?;
-        if originating_address.type_addr.type_of_number == TypeOfNumber::Gsm {
-            // XXX: What we really need to do is handle GSM numbers properly.
-            // However, this lets us actually get text out of them, although
-            // the sender is still mangled.
-            offset += 1;
-        }
         offset += real_len as usize;
         check_offset!(b, offset, "protocol identifier");
         let _pid = b[offset];

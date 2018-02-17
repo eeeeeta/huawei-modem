@@ -16,6 +16,7 @@ fn main() {
         let pdu = DeliverPdu::try_from(&bytes as &[u8]).unwrap();
         println!("PDU: {:?}", pdu);
         let data = pdu.get_message_data().decode_message();
+        println!("Sender: {}", pdu.originating_address);
         println!("Message: {:?}", data);
     }
 }
