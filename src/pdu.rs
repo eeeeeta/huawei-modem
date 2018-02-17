@@ -528,6 +528,12 @@ impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
         let de = destination_end - 1;
         check_offset!(b, de, "originating address");
         let originating_address = PduAddress::try_from(&b[offset..destination_end])?;
+        if originating_address.type_addr.type_of_number == TypeOfNumber::Gsm {
+            // XXX: What we really need to do is handle GSM numbers properly.
+            // However, this lets us actually get text out of them, although
+            // the sender is still mangled.
+            offset += 1;
+        }
         offset += real_len as usize;
         check_offset!(b, offset, "protocol identifier");
         let _pid = b[offset];
@@ -732,6 +738,7 @@ pub struct GsmMessageData {
     bytes: Vec<u8>,
     user_data_len: u8
 }
+#[derive(Debug, Clone)]
 pub struct DecodedMessage {
     pub text: String,
     pub udh: Option<UserDataHeader>
