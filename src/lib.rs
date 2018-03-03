@@ -28,6 +28,14 @@ use tokio_core::reactor::Handle;
 pub use errors::HuaweiResult;
 pub type HuaweiFuture<T> = Box<Future<Item = T, Error = errors::HuaweiError>>;
 
+macro_rules! check_offset {
+    ($b:ident, $offset:ident, $reason:expr) => {
+        if $b.get($offset).is_none() {
+            return Err(HuaweiError::InvalidPdu(concat!("Offset check failed for: ", $reason)));
+        }
+    }
+}
+
 pub mod error_codes;
 pub mod errors;
 pub mod gsm_encoding;

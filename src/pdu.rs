@@ -3,64 +3,8 @@ use std::str::FromStr;
 use num::FromPrimitive;
 use std::convert::{Infallible, TryFrom};
 use errors::*;
+use gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
 
-macro_rules! check_offset {
-    ($b:ident, $offset:ident, $reason:expr) => {
-        if $b.get($offset).is_none() {
-            return Err(HuaweiError::InvalidPdu(concat!("Offset check failed for: ", $reason)));
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct UdhComponent {
-    pub id: u8,
-    pub data: Vec<u8>
-}
-#[derive(Debug, Clone)]
-pub struct UserDataHeader {
-    pub components: Vec<UdhComponent>
-}
-impl UserDataHeader {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut ret = vec![];
-        for comp in self.components.iter() {
-            ret.push(comp.id);
-            ret.push(comp.data.len() as u8);
-            ret.extend(comp.data.clone());
-        }
-        let len = ret.len() as u8;
-        ret.insert(0, len);
-        ret
-    }
-}
-impl<'a> TryFrom<&'a [u8]> for UserDataHeader {
-    type Error = HuaweiError;
-    /// Accepts a UDH *without* the UDH Length octet at the start.
-    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
-        let mut offset = 0;
-        let mut ret = vec![];
-        loop {
-            if b.get(offset).is_none() {
-                break;
-            }
-            let id = b[offset];
-            offset += 1;
-            check_offset!(b, offset, "UDH component length");
-            let len = b[offset];
-            let end = offset + len as usize + 1;
-            offset += 1;
-            let o = end - 1;
-            check_offset!(b, o, "UDH component data");
-            let data = b[offset..end].to_owned();
-            offset = end;
-            ret.push(UdhComponent { id, data });
-        }
-        Ok(UserDataHeader {
-            components: ret
-        })
-    }
-}
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum TypeOfNumber {
@@ -136,8 +80,8 @@ impl<'a> From<&'a [u8]> for PhoneNumber {
     }
 }
 impl PhoneNumber {
-    pub fn from_gsm(b: &[u8]) -> Self {
-        PhoneNumber(decode_sms_7bit(b, 0))
+    pub fn from_gsm(b: &[u8], len: usize) -> Self {
+        PhoneNumber(decode_sms_7bit(b, 0, len))
     }
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
@@ -168,7 +112,6 @@ pub struct PduAddress {
 }
 impl fmt::Display for PduAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use gsm_encoding;
 
         let prefix = match self.type_addr.type_of_number {
             TypeOfNumber::International => "+",
@@ -176,7 +119,7 @@ impl fmt::Display for PduAddress {
         };
         write!(f, "{}", prefix)?;
         if self.type_addr.type_of_number == TypeOfNumber::Gsm {
-            write!(f, "{}", gsm_encoding::gsm_decode_string(&self.number.0))?;
+            write!(f, "{}", gsm_decode_string(&self.number.0))?;
         }
         else {
             for b in self.number.0.iter() {
@@ -219,15 +162,17 @@ impl FromStr for PduAddress {
 impl<'a> TryFrom<&'a [u8]> for PduAddress {
     type Error = HuaweiError;
     fn try_from(b: &[u8]) -> HuaweiResult<Self> {
-        if b.len() < 2 {
-            Err(HuaweiError::InvalidPdu("tried to make a PduAddress from less than 2 bytes"))?
+        if b.len() < 3 {
+            Err(HuaweiError::InvalidPdu("tried to make a PduAddress from less than 3 bytes"))?
         }
-        let type_addr = AddressType::try_from(b[0])?;
+        let len = b[0] as usize;
+        let type_addr = AddressType::try_from(b[1])?;
         let number = if type_addr.type_of_number == TypeOfNumber::Gsm {
-            PhoneNumber::from_gsm(&b[1..])
+            let len = (len * 4) / 7;
+            PhoneNumber::from_gsm(&b[2..], len)
         }
         else {
-            PhoneNumber::from(&b[1..])
+            PhoneNumber::from(&b[2..])
         };
         Ok(PduAddress { type_addr, number })
     }
@@ -525,7 +470,7 @@ impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
         let sca = if scalen > 0 {
             let o = offset - 1;
             check_offset!(b, o, "SCA");
-            Some(PduAddress::try_from(&b[1..offset])?)
+            Some(PduAddress::try_from(&b[0..offset])?)
         }
         else {
             None
@@ -534,20 +479,19 @@ impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
         let first_octet = DeliverPduFirstOctet::from(b[offset]);
         offset += 1;
         check_offset!(b, offset, "originating address len");
-        let destination_len = b[offset];
-        offset += 1;
-        check_offset!(b, offset, "originating address type");
-        let mut real_len = (destination_len / 2) + 1;
-        let type_addr = AddressType::try_from(b[offset])?;
-        if type_addr.type_of_number == TypeOfNumber::Gsm {
-            // XXX: a trifle hacky
-            real_len += 1;
-        }
-        let destination_end = offset + (real_len as usize);
+        let destination_len_nybbles = b[offset];
+        // destination_len_nybbles represents the length of the address, in nybbles (half-octets).
+        // Therefore, we divide by 2, rounding up, to get the number of full octets.
+        let destination_len_octets = (destination_len_nybbles / 2) + destination_len_nybbles % 2;
+        // destination_offset = what we're going to add to the offset to get the new offset
+        // This is the destination length, in octets, plus one byte for the address length field,
+        // and another because range syntax is non-inclusive.
+        let destination_offset = (destination_len_octets as usize) + 2;
+        let destination_end = offset + destination_offset;
         let de = destination_end - 1;
         check_offset!(b, de, "originating address");
         let originating_address = PduAddress::try_from(&b[offset..destination_end])?;
-        offset += real_len as usize;
+        offset += destination_offset;
         check_offset!(b, offset, "protocol identifier");
         let _pid = b[offset];
         offset += 1;
@@ -619,70 +563,6 @@ impl Pdu {
         }
     }
 }
-impl<'a> TryFrom<&'a [u8]> for Pdu {
-    type Error = HuaweiError;
-    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
-        let scalen = b[0];
-        let mut offset: usize = scalen as usize + 1;
-        let sca = if scalen > 0 {
-            let o = offset - 1;
-            check_offset!(b, o, "SCA");
-            Some(PduAddress::try_from(&b[1..offset])?)
-        }
-        else {
-            None
-        };
-        check_offset!(b, offset, "first octet");
-        let first_octet = PduFirstOctet::from(b[offset]);
-        offset += 1;
-        check_offset!(b, offset, "message ID");
-        let message_id = b[offset];
-        offset += 1;
-        check_offset!(b, offset, "destination len");
-        let destination_len = b[offset];
-        offset += 1;
-        let real_len = (destination_len / 2) + destination_len % 2 + 1;
-        let destination_end = offset + (real_len as usize);
-        let de = destination_end - 1;
-        check_offset!(b, de, "destination address");
-        let destination = PduAddress::try_from(&b[offset..destination_end])?;
-        offset += real_len as usize;
-        check_offset!(b, offset, "protocol identifier");
-        let _pid = b[offset];
-        offset += 1;
-        check_offset!(b, offset, "data coding scheme");
-        let dcs = DataCodingScheme::from(b[offset]);
-        offset += 1;
-        let validity_period = if first_octet.vpf != VpFieldValidity::Invalid {
-            check_offset!(b, offset, "validity period");
-            let ret = b[offset];
-            offset += 1;
-            ret
-        }
-        else {
-            0
-        };
-        check_offset!(b, offset, "user data len");
-        let user_data_len = b[offset];
-        offset += 1;
-        let user_data = if b.get(offset).is_some() {
-            b[offset..].to_owned()
-        }
-        else {
-            vec![]
-        };
-        Ok(Pdu {
-            sca,
-            first_octet,
-            message_id,
-            destination,
-            dcs,
-            validity_period,
-            user_data,
-            user_data_len
-        })
-    }
-}
 impl Pdu {
     pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
@@ -733,224 +613,3 @@ impl<'a> HexData<'a> {
             .collect()
     }
 }
-pub fn split_buffers(buf: Vec<u8>, max_len: usize) -> Vec<Vec<u8>> {
-    let mut ret = vec![];
-    let mut cbuf = buf;
-    while max_len < cbuf.len() {
-        let split = cbuf.split_off(max_len);
-        let old = ::std::mem::replace(&mut cbuf, split);
-        ret.push(old);
-    }
-    ret.push(cbuf);
-    ret
-}
-#[derive(Debug, Clone)]
-pub struct GsmMessageData {
-    encoding: MessageEncoding,
-    udh: bool,
-    bytes: Vec<u8>,
-    user_data_len: u8
-}
-#[derive(Debug, Clone)]
-pub struct DecodedMessage {
-    pub text: String,
-    pub udh: Option<UserDataHeader>
-}
-impl GsmMessageData {
-    pub fn encoding(&self) -> &MessageEncoding {
-        &self.encoding
-    }
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-    pub fn user_data_len(&self) -> u8 {
-        self.user_data_len
-    }
-    pub fn decode_message(&self) -> HuaweiResult<DecodedMessage> {
-        use encoding::{Encoding, DecoderTrap};
-        use encoding::all::UTF_16BE;
-        use gsm_encoding;
-        let mut padding = 0;
-        let mut start = 0;
-        let mut udh = None;
-        if self.udh {
-            if self.bytes.len() < 1 {
-                Err(HuaweiError::InvalidPdu("UDHI specified, but no data"))?
-            }
-            let udhl = self.bytes[0] as usize;
-            padding = 7 - (((udhl + 1) * 8) % 7);
-            start = udhl + 1;
-            if self.bytes.len() < start {
-                Err(HuaweiError::InvalidPdu("UDHL goes past end of data"))?
-            }
-            udh = Some(UserDataHeader::try_from(&self.bytes[1..start])?);
-        }
-        if self.bytes.get(start).is_none() {
-            return Ok(DecodedMessage {
-                text: String::new(),
-                udh
-            });
-        }
-        match self.encoding {
-            MessageEncoding::Gsm7Bit => {
-                let buf = decode_sms_7bit(&self.bytes[start..], padding);
-                Ok(DecodedMessage {
-                    text: gsm_encoding::gsm_decode_string(&buf),
-                    udh
-                })
-            },
-            MessageEncoding::Ucs2 => {
-                Ok(DecodedMessage {
-                    text: UTF_16BE.decode(&self.bytes[start..], DecoderTrap::Replace).unwrap(),
-                    udh
-                })
-            },
-            x => Err(HuaweiError::UnsupportedEncoding(x, self.bytes.clone()))
-        }
-    }
-    pub fn encode_message(msg: &str) -> Vec<GsmMessageData> {
-        use encoding::{Encoding, EncoderTrap};
-        use encoding::all::UTF_16BE;
-        use rand;
-        use gsm_encoding;
-
-        if let Some(buf) = gsm_encoding::try_gsm_encode_string(msg) {
-            let user_data_len = buf.len();
-            if user_data_len > 160 {
-                // time to make a Concatenated SMS
-                let bufs = split_buffers(buf, 153);
-                let csms_ref = rand::random::<u8>();
-                let num_parts = bufs.len() as u8;
-                bufs.into_iter()
-                    .enumerate()
-                    .map(|(i, buf)| {
-                        let udh = UserDataHeader {
-                            components: vec![UdhComponent {
-                                id: 0,
-                                data: vec![csms_ref, num_parts, i as u8 + 1]
-                            }]
-                        };
-                        let mut ret = udh.as_bytes();
-                        let padding = 7 - ((ret.len() * 8) % 7);
-                        let len = ((ret.len() * 8) + padding + (buf.len() * 7)) / 7;
-                        let enc = encode_sms_7bit(&buf, padding);
-                        ret.extend(enc);
-                        GsmMessageData {
-                            encoding: MessageEncoding::Gsm7Bit,
-                            bytes: ret,
-                            udh: true,
-                            user_data_len: len as u8
-                        }
-                    })
-                    .collect()
-            }
-            else {
-                let buf = encode_sms_7bit(&buf, 0);
-                vec![GsmMessageData {
-                    encoding: MessageEncoding::Gsm7Bit,
-                    bytes: buf,
-                    udh: false,
-                    user_data_len: user_data_len as u8
-                }]
-            }
-        }
-        else {
-            let buf = UTF_16BE.encode(msg, EncoderTrap::Replace).unwrap();
-            let user_data_len = buf.len();
-            if user_data_len > 140 {
-                // time to make a Concatenated SMS
-                let bufs = split_buffers(buf, 134);
-                let csms_ref = rand::random::<u8>();
-                let num_parts = bufs.len() as u8;
-                bufs.into_iter()
-                    .enumerate()
-                    .map(|(i, buf)| {
-                        let udh = UserDataHeader {
-                            components: vec![UdhComponent {
-                                id: 0,
-                                data: vec![csms_ref, num_parts, i as u8 + 1]
-                            }]
-                        };
-                        let mut ret = udh.as_bytes();
-                        ret.extend(buf);
-                        let len = ret.len();
-                        GsmMessageData {
-                            encoding: MessageEncoding::Ucs2,
-                            bytes: ret,
-                            udh: true,
-                            user_data_len: len as u8
-                        }
-                    })
-                    .collect()
-            }
-            else {
-                vec![GsmMessageData {
-                    encoding: MessageEncoding::Ucs2,
-                    bytes: buf,
-                    udh: false,
-                    user_data_len: user_data_len as u8
-                }]
-            }
-        }
-    }
-}
-// This function wins the "I spent a *goddamn hour* debugging this crap" award.
-// The best part? The bug wasn't even in this function...!
-pub fn decode_sms_7bit(orig: &[u8], padding: usize) -> Vec<u8> {
-    let mut ret = vec![0];
-    let mut chars_cur = 7;
-    let mut i = 0;
-    if padding > 0 && orig.len() > 0 {
-        chars_cur = padding;
-    }
-    for (j, data) in orig.iter().enumerate() {
-        if chars_cur == 0 {
-            chars_cur = 7;
-            ret.push(0);
-            i += 1;
-        }
-        let next = data >> chars_cur;
-        let mut cur = ((data << (8 - chars_cur)) >> (8 - chars_cur)) << (7 - chars_cur);
-        ret[i] |= cur;
-        // XXX: This i == 152 condition is a hack. For some reason,
-        // we need to push the last bit for full SMSes, but not for others?
-        if j+1 < orig.len() || i == 152 {
-            ret.push(next);
-        }
-        chars_cur -= 1;
-        i += 1;
-    }
-    if padding > 0 && ret.len() > 0 {
-        ret.remove(0);
-    }
-    ret
-}
-pub fn encode_sms_7bit(orig: &[u8], padding: usize) -> Vec<u8> {
-    let mut ret = vec![];
-    // Number of bits in the current octet that come from the current septet.
-    let mut chars_cur = 7;
-    if padding > 0 && orig.len() > 0 {
-        chars_cur = padding;
-        let cur = orig[0] << padding;
-        ret.push(cur);
-        chars_cur -= 1;
-    }
-    for (i, data) in orig.iter().enumerate() {
-        if chars_cur == 0 {
-            chars_cur = 7;
-            continue;
-        }
-        let mut cur = (*data & 0b01111111) >> (7 - chars_cur);
-        let next = if let Some(n) = orig.get(i+1) {
-            *n << chars_cur
-        }
-        else {
-            0
-        };
-        cur |= next;
-        ret.push(cur);
-        chars_cur -= 1;
-    }
-    ret
-}
-

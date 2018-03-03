@@ -1,5 +1,3 @@
-#![feature(try_from)]
-
 extern crate huawei_modem;
 extern crate env_logger;
 extern crate futures;
@@ -8,8 +6,8 @@ extern crate tokio_core;
 use tokio_core::reactor::Core;
 use futures::{Future, Stream};
 use huawei_modem::{HuaweiModem, cmd};
-use huawei_modem::pdu::{GsmMessageData, Pdu, PduAddress, HexData};
-use std::convert::TryFrom;
+use huawei_modem::pdu::{Pdu, PduAddress, HexData};
+use huawei_modem::gsm_encoding::GsmMessageData;
 use std::io::prelude::*;
 
 fn main() {
@@ -78,8 +76,6 @@ fn main() {
             let msg = Pdu::make_simple_message(recipient.clone(), msg);
             println!("PDU: {:?}", msg);
             println!("Encoded PDU: {}", HexData(&msg.as_bytes().0));
-            let pdu = Pdu::try_from(&msg.as_bytes().0 as &[u8]).unwrap();
-            assert_eq!(pdu, msg);
             let fut = cmd::sms::send_sms_pdu(&mut modem, &msg);
             println!("Result: {:?}", core.run(fut));
         }

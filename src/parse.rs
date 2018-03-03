@@ -221,7 +221,7 @@ mod test {
         assert_eq!(parse_range(b"2-9001").unwrap(),
                    (&[] as &[_], (2, 9001)));
         assert_eq!(parse_value(b"2-9001").unwrap(),
-                   (&[] as &[_], AtValue::Range(2, 9001)));
+                   (&[] as &[_], AtValue::Range((2, 9001))));
     }
     #[test]
     fn value_empty() {
@@ -248,15 +248,15 @@ mod test {
                 String("GSM".into()),
                 BracketedArray(vec![]),
                 BracketedArray(vec![
-                    Range(0, 3)
+                    Range((0, 3))
                 ]),
                 Empty,
                 BracketedArray(vec![
-                    Range(0, 1)
+                    Range((0, 1))
                 ]),
                 Unknown("invalid".into()),
                 BracketedArray(vec![
-                    Range(0, 2),
+                    Range((0, 2)),
                     Integer(15)
                 ]),
                 BracketedArray(vec![
