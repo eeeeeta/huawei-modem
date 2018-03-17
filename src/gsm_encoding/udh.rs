@@ -10,7 +10,33 @@ pub struct UdhComponent {
 pub struct UserDataHeader {
     pub components: Vec<UdhComponent>
 }
+#[derive(Debug, Clone)]
+pub struct ConcatenatedSmsData {
+    pub reference: u16,
+    pub parts: u8,
+    pub sequence: u8
+}
 impl UserDataHeader {
+    pub fn get_concatenated_sms_data(&self) -> Option<ConcatenatedSmsData> {
+        for comp in self.components.iter() {
+            if comp.id == 0 && comp.data.len() == 3 {
+                return Some(ConcatenatedSmsData {
+                    reference: comp.data[0] as _,
+                    parts: comp.data[1],
+                    sequence: comp.data[2]
+                });
+            }
+            if comp.id == 8 && comp.data.len() == 4 {
+                let reference = ((comp.data[0] as u16) << 8) | (comp.data[1] as u16);
+                return Some(ConcatenatedSmsData {
+                    reference,
+                    parts: comp.data[2],
+                    sequence: comp.data[3]
+                });
+            }
+        }
+        None
+    }
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
         for comp in self.components.iter() {
