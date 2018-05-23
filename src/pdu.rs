@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 use errors::*;
 use gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
 
+#[derive(Debug, Copy, Clone)]
 pub enum Infallible { }
 
 #[repr(u8)]
