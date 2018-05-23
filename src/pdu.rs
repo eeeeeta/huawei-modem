@@ -1,12 +1,9 @@
 use std::fmt;
 use std::str::FromStr;
 use num::FromPrimitive;
-use std::convert::TryFrom;
+use convert::{Infallible, TryFrom};
 use errors::*;
 use gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
-
-#[derive(Debug, Copy, Clone)]
-pub enum Infallible { }
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]

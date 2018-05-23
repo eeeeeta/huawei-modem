@@ -1,7 +1,7 @@
 //! Utilities for dealing with the (annoying) GSM 7-bit encoding.
 
 use pdu::MessageEncoding;
-use std::convert::TryFrom;
+use convert::TryFrom;
 use errors::*;
 
 mod lookup_tables;

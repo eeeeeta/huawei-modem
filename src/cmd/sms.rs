@@ -3,7 +3,7 @@ use at::*;
 use errors::*;
 use futures::Future;
 use pdu::{HexData, Pdu, AddressType, DeliverPdu};
-use std::convert::TryFrom;
+use convert::TryFrom;
 use util::HuaweiFromPrimitive;
 
 /// The storage status of an SMS message.

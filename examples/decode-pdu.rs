@@ -1,9 +1,7 @@
-#![feature(try_from)]
-
 extern crate huawei_modem;
 
 use huawei_modem::pdu::{DeliverPdu, HexData};
-use std::convert::TryFrom;
+use convert::TryFrom;
 use std::io::prelude::*;
 
 fn main() {

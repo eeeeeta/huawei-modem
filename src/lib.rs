@@ -1,5 +1,3 @@
-#![feature(conservative_impl_trait, try_from)]
-
 extern crate futures;
 extern crate tokio_core;
 extern crate tokio_file_unix;
@@ -38,6 +36,7 @@ macro_rules! check_offset {
 
 pub mod error_codes;
 pub mod errors;
+pub mod convert;
 pub mod gsm_encoding;
 pub mod at;
 pub mod pdu;

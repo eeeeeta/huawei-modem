@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use convert::TryFrom;
 use errors::*;
 
 #[derive(Debug, Clone)]
