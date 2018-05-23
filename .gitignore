@@ -1,4 +1,5 @@
 *.swp
+Cargo.lock
 .gdb_history
 /target/
 **/*.rs.bk
