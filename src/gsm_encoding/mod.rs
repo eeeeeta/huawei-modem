@@ -108,7 +108,7 @@ pub struct GsmMessageData {
     pub(crate) bytes: Vec<u8>,
     pub(crate) user_data_len: u8
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DecodedMessage {
     pub text: String,
     pub udh: Option<UserDataHeader>

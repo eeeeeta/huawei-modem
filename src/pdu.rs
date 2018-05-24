@@ -6,7 +6,7 @@ use errors::*;
 use gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
 
 #[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive, Hash)]
 pub enum TypeOfNumber {
     Unknown = 0b0_000_0000,
     International = 0b0_001_0000,
@@ -17,7 +17,7 @@ pub enum TypeOfNumber {
     Reserved = 0b0_111_0000
 }
 #[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive, Hash)]
 pub enum NumberingPlanIdentification {
     NetworkDetermined = 0b0_000_0000,
     IsdnTelephone = 0b0_000_0001,
@@ -27,7 +27,7 @@ pub enum NumberingPlanIdentification {
     Private = 0b0_000_1001,
     Ermes = 0b0_000_1010
 }
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AddressType {
     pub type_of_number: TypeOfNumber,
     pub numbering_plan_identification: NumberingPlanIdentification
@@ -63,7 +63,7 @@ impl Into<u8> for AddressType {
         ret
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PhoneNumber(pub Vec<u8>);
 impl<'a> From<&'a [u8]> for PhoneNumber {
     fn from(b: &[u8]) -> Self {
@@ -105,7 +105,7 @@ impl PhoneNumber {
         ret
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PduAddress {
     pub type_addr: AddressType,
     pub number: PhoneNumber
