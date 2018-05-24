@@ -465,6 +465,9 @@ impl DeliverPdu {
 impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
     type Error = HuaweiError;
     fn try_from(b: &[u8]) -> HuaweiResult<Self> {
+        if b.len() == 0 {
+            return Err(HuaweiError::InvalidPdu("zero-length input"));
+        }
         let scalen = b[0];
         let mut offset: usize = scalen as usize + 1;
         let sca = if scalen > 0 {
