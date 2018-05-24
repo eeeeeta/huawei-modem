@@ -71,6 +71,7 @@ pub enum DeletionOptions {
 pub struct SmsMessage {
     pub status: MessageStatus,
     pub index: u32,
+    pub raw_pdu: Vec<u8>,
     pub pdu: DeliverPdu
 }
 pub fn set_new_message_indications(modem: &mut HuaweiModem, mode: NewMessageNotification, mt: NewMessageStorage) -> impl Future<Item = (), Error = HuaweiError> {
@@ -147,6 +148,7 @@ pub fn list_sms_pdu(modem: &mut HuaweiModem, status: MessageStatus) -> impl Futu
                         ret.push(SmsMessage {
                             index: cur.0,
                             status: cur.1,
+                            raw_pdu: hex.into(),
                             pdu
                         })
                     }
