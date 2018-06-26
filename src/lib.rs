@@ -83,6 +83,7 @@ impl HuaweiModem {
         let fut = HuaweiModemFuture::new(framed, rx, urctx);
         h.spawn(fut.map_err(|e| {
             error!("HuaweiModemFuture failed: {}", e);
+            error!("Backtrace: {}", e.backtrace());
             ()
         }));
         Ok(Self { tx, urc: Some(urcrx) })
