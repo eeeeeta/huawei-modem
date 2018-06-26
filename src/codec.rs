@@ -37,8 +37,13 @@ impl Encoder for AtCodec {
 
     fn encode(&mut self, item: AtCommand, dst: &mut BytesMut) -> Result<(), Self::Error> {
         use std::fmt::Write;
+        use bytes::BufMut;
+
         trace!("sending data: {}", item);
-        write!(dst, "\r\n{}\r\n", item)?;
+        let data = format!("\r\n{}\r\n", item);
+        let delta = data.as_bytes().len().saturating_sub(dst.remaining_mut());
+        dst.reserve(delta);
+        dst.write_str(&data)?;
         Ok(())
     }
 }
