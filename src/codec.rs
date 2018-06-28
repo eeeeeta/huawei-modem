@@ -41,9 +41,15 @@ impl Encoder for AtCodec {
 
         trace!("sending data: {}", item);
         let data = format!("\r\n{}\r\n", item);
-        let delta = data.as_bytes().len().saturating_sub(dst.remaining_mut());
+        let data_len = data.as_bytes().len();
+        let rem = dst.remaining_mut();
+        let delta = data_len.saturating_sub(rem);
         dst.reserve(delta);
-        dst.write_str(&data)?;
+        dst.write_str(&data)
+            .map_err(|e| {
+                error!("writing to AtCodec buffer failed: rem {} len {} delta {}", rem, data_len, delta);
+                e
+            })?;
         Ok(())
     }
 }
