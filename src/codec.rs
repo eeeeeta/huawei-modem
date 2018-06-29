@@ -44,7 +44,9 @@ impl Encoder for AtCodec {
         let data_len = data.as_bytes().len();
         let rem = dst.remaining_mut();
         let delta = data_len.saturating_sub(rem);
-        dst.reserve(delta);
+        if data_len > rem {
+            dst.reserve(data_len * 2);
+        }
         dst.write_str(&data)
             .map_err(|e| {
                 error!("writing to AtCodec buffer failed: rem {} len {} delta {}", rem, data_len, delta);
