@@ -3,7 +3,7 @@ use crate::at::*;
 use crate::errors::*;
 use futures::Future;
 use crate::pdu::{HexData, Pdu, AddressType, DeliverPdu};
-use crate::convert::TryFrom;
+use std::convert::TryFrom;
 use crate::util::HuaweiFromPrimitive;
 
 /// The storage status of an SMS message.

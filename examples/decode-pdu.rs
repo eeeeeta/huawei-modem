@@ -1,7 +1,5 @@
-extern crate huawei_modem;
-
 use huawei_modem::pdu::{DeliverPdu, HexData};
-use convert::TryFrom;
+use std::convert::TryFrom;
 use std::io::prelude::*;
 
 fn main() {

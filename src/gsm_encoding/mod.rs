@@ -1,7 +1,7 @@
 //! Utilities for dealing with the (annoying) GSM 7-bit encoding.
 
 use crate::pdu::MessageEncoding;
-use crate::convert::TryFrom;
+use std::convert::TryFrom;
 use crate::errors::*;
 
 mod lookup_tables;

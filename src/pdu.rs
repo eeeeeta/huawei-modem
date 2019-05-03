@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 use num::FromPrimitive;
-use crate::convert::{Infallible, TryFrom};
+use std::convert::{Infallible, TryFrom};
 use crate::errors::*;
 use crate::gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
 

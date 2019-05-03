@@ -26,7 +26,6 @@ macro_rules! check_offset {
 
 pub mod error_codes;
 pub mod errors;
-pub mod convert;
 pub mod gsm_encoding;
 pub mod at;
 pub mod pdu;
