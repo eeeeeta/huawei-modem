@@ -2,6 +2,7 @@
 authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
 edition = "2018"
 name = "huawei-modem"
+description = "A set of utilities for interfacing with USB 3G/HSDPA/UMTS modems (particularly Huawei models) that use the Hayes/AT command set."
 license = "CC0"
 documentation = "https://docs.rs/huawei-modem"
 homepage = "https://git.theta.eu.org/huawei-modem.git/about/"
