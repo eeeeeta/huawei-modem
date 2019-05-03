@@ -1,5 +1,5 @@
 //! Typed representations of modem error codes.
-
+#![allow(missing_docs)]
 /// A CMS (SMS-related) error code.
 ///
 /// I can't be bothered to write out all the error code meanings twice. If you hit the `[src]`

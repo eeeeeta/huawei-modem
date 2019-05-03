@@ -1,3 +1,12 @@
+//! Utilities for dealing with GSM 03.40 Protocol Data Units (PDUs).
+//!
+//! See [this Wikipedia article](https://en.wikipedia.org/wiki/GSM_03.40) for more genreal
+//! information on the format of PDUs.
+//!
+//! As of the time of writing, this library's implementation of PDUs can be classed as "passable" -
+//! in that it currently supports 2 out of the 6 specified PDU types (SMS-DELIVER and SMS-SUBMIT),
+//! and straight up refuses to parse anything else. Luckily, these two are the only ones you really
+//! need (and if they aren't, feel free to file an issue!).
 use std::fmt;
 use std::str::FromStr;
 use num::FromPrimitive;
@@ -5,17 +14,32 @@ use std::convert::{Infallible, TryFrom};
 use crate::errors::*;
 use crate::gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
 
+/// Type of number value - used as part of phone numbers to indicate whether the number is
+/// international, alphanumeric, etc.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive, Hash)]
 pub enum TypeOfNumber {
+    /// Unknown number type ('let the network handle it please').
     Unknown = 0b0_000_0000,
+    /// International (i.e. starting with +). This is probably what you want when sending messages.
     International = 0b0_001_0000,
+    /// National number - no prefix or suffix added.
     National = 0b0_010_0000,
+    /// Special number - you can't send messages with this type.
     Special = 0b0_011_0000,
+    /// Alphanumeric number - i.e. this isn't a phone number, it's actually some text that
+    /// indicates who the sender is (e.g. when banks/other companies send you SMSes).
+    ///
+    /// You can't send messages with this type.
     Gsm = 0b0_101_0000,
+    /// Short number (not in use).
     Short = 0b0_110_0000,
+    /// Reserved (not in use).
     Reserved = 0b0_111_0000
 }
+/// Numbering plan idnficiation value.
+///
+/// I think this is mostly vestigial, and you'll want to set this to `IsdnTelephone`.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive, Hash)]
 pub enum NumberingPlanIdentification {
@@ -27,6 +51,11 @@ pub enum NumberingPlanIdentification {
     Private = 0b0_000_1001,
     Ermes = 0b0_000_1010
 }
+/// Address type, comprised of a `TypeOfNumber` and `NumberingPlanIdentification` value.
+///
+/// It is **highly** recommended that you just use the `Default` value of this `struct`, unless you
+/// know what you're doing, and that your phone numbers are in international format (i.e. starting
+/// with `+`). 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AddressType {
     pub type_of_number: TypeOfNumber,
@@ -63,8 +92,13 @@ impl Into<u8> for AddressType {
         ret
     }
 }
+/// A GSM phone number, encoded using their weird half-octet encoding.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PhoneNumber(pub Vec<u8>);
+/// Make a phone number from some ordinary bytes.
+/// 
+/// Note that **only the least significant 4 bytes** are used in this conversion, due to the way
+/// GSM phone numbers work. The top 4 bytes are discarded!
 impl<'a> From<&'a [u8]> for PhoneNumber {
     fn from(b: &[u8]) -> Self {
         let mut ret = vec![];
@@ -80,9 +114,11 @@ impl<'a> From<&'a [u8]> for PhoneNumber {
     }
 }
 impl PhoneNumber {
+    /// Make a `PhoneNumber` for an alphanumeric GSM sender address.
     pub fn from_gsm(b: &[u8], len: usize) -> Self {
         PhoneNumber(decode_sms_7bit(b, 0, len))
     }
+    /// Represent this phone number as normal bytes, instead of their weird as hell encoding.
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
         let mut cur = 0b0000_0000;
@@ -105,6 +141,12 @@ impl PhoneNumber {
         ret
     }
 }
+/// A PDU address (i.e. phone number, and number type). This is what you want to use for
+/// representing phone numbers, most likely.
+///
+/// Use the `FromStr` implementation here to convert regular string phone numbers into weird PDU
+/// format. Note that alphanumeric numbers are not supported at this time (only normal phone
+/// numbers).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PduAddress {
     pub type_addr: AddressType,
@@ -178,6 +220,13 @@ impl<'a> TryFrom<&'a [u8]> for PduAddress {
     }
 }
 impl PduAddress {
+    /// Convert this address into bytes, as represented in the actual PDU.
+    ///
+    /// The `broken_len` flag controls whether to represent the length as the length in bytes of
+    /// the whole PduAddress (false), or just the length of the phone number contained within (true).
+    ///
+    /// In testing, it seems as if it should pretty much always be `true`, which is weird. A future
+    /// version of the crate may well just remove the parameter and default to true.
     pub fn as_bytes(&self, broken_len: bool) -> Vec<u8> {
         let mut ret = vec![];
         ret.push(self.type_addr.into());
@@ -191,29 +240,46 @@ impl PduAddress {
         ret
     }
 }
+/// SMS PDU message type.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum MessageType {
+    /// SMS-DELIVER (SC to MT) or SMS-DELIVER-REPORT (MT to SC)
     SmsDeliver = 0b000000_00,
+    /// SMS-STATUS-REPORT (SC to MT) or SMS-COMMAND (MT to SC)
     SmsCommand = 0b000000_10,
+    /// SMS-SUBMIT-REPORT (SC to MT) or SMS-SUBMIT (MT to SC)
     SmsSubmit = 0b000000_01,
+    /// Reserved for future use.
     Reserved = 0b000000_11
 }
+/// Validity of the VP field.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum VpFieldValidity {
+    /// Invalid.
     Invalid = 0b0000_00_00,
+    /// Valid, in relative format.
     Relative = 0b0000_10_00,
+    /// Valid, in enhanced format.
     Enhanced = 0b0000_01_00,
+    /// Valid, in absolute format.
     Absolute = 0b0000_11_00,
 }
+/// The first octet of a SMS-SUBMIT PDU.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PduFirstOctet {
+    /// Message type.
     mti: MessageType,
+    /// Reject duplicates (?).
     rd: bool,
+    /// Validity and format of the VP field.
     vpf: VpFieldValidity,
+    /// Whether to request a status report when the message is sent succesfully.
     srr: bool,
+    /// Does the user data segment contain a data header?
     udhi: bool,
+    /// Do replies to this message use the same settings as this message?
     rp: bool
 }
 impl From<u8> for PduFirstOctet {
@@ -249,25 +315,48 @@ impl Into<u8> for PduFirstOctet {
         ret
     }
 }
+/// The data coding scheme of the message.
+///
+/// Basically, this `enum` is a decoded 8-bit field that has a bunch of different cases, which is
+/// why there are so many options here.
+/// 
+/// The meanings explained in the Huawei spec are very confusing and sometimes overlapping.
+/// Use the `encoding` method to figure out what encoding to use, which is probably the only real
+/// use you're going to have for this `struct` anyway.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DataCodingScheme {
+    /// Standard coding scheme.
     Standard {
+        /// Whether or not the message is compressed, but this isn't actually supported.
         compressed: bool,
+        /// The message class (flash SMS, stored to SIM only, etc.)
         class: MessageClass,
+        /// The message encoding (7-bit, UCS-2, 8-bit)
         encoding: MessageEncoding
     },
+    /// Reserved value.
     Reserved,
+    /// Discard the message content, but display the message waiting indication to the user.
     MessageWaitingDiscard {
+        /// Enables or disables message waiting indication.
         waiting: bool,
+        /// Type of message waiting.
         type_indication: MessageWaitingType,
     },
+    /// Store the message content, and display the message waiting indication to the user.
     MessageWaiting {
+        /// Enables or disables message waiting indication.
         waiting: bool,
+        /// Type of message waiting.
         type_indication: MessageWaitingType,
+        /// Whether or not the message is encoded in UCS-2 format.
         ucs2: bool
     }
 }
 impl DataCodingScheme {
+    /// Determine which character encoding the message uses (i.e. GSM 7-bit, UCS-2, ...)
+    ///
+    /// (Some of these answers might be guesses.)
     pub fn encoding(&self) -> MessageEncoding {
         use self::DataCodingScheme::*;
         match *self {
@@ -369,6 +458,7 @@ impl Into<u8> for DataCodingScheme {
         }
     }
 }
+/// Type of message waiting.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum MessageWaitingType {
@@ -377,27 +467,42 @@ pub enum MessageWaitingType {
     Email = 0b000000_10,
     Unknown = 0b000000_11
 }
+/// Class of message received.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum MessageClass {
+    /// Silent (class 0)  - display on the phone's UI, but don't store in memory.
     Silent = 0b000000_00,
+    /// Store to the NV (class 1), or SIM card if the NV is full.
     StoreToNv = 0b000000_01,
+    /// Store to the SIM card only (class 2).
     StoreToSim = 0b000000_10,
+    /// Store to the TE (class 3).
     StoreToTe = 0b000000_11
 }
+/// SMS message data encoding.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum MessageEncoding {
+    /// GSM packed 7-bit encoding.
     Gsm7Bit = 0b0000_00_00,
+    /// Binary 8-bit encoding.
     EightBit = 0b0000_01_00,
+    /// UCS-2 (i.e. UTF-16) encoding.
     Ucs2 = 0b0000_10_00,
+    /// Reserved for future use.
     Reserved = 0b0000_11_00,
 }
+/// The first octet of a SMS-DELIVER PDU.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliverPduFirstOctet {
+    /// Message type.
     mti: MessageType,
+    /// Indicates whetehr a status report was requested.
     sri: bool,
+    /// Does the user data segment contain a data header?
     udhi: bool,
+    /// Do replies to this message use the same settings as this message?
     rp: bool
 }
 impl From<u8> for DeliverPduFirstOctet {
@@ -410,6 +515,7 @@ impl From<u8> for DeliverPduFirstOctet {
         DeliverPduFirstOctet { mti, sri, udhi, rp }
     }
 }
+/// Service centre timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmscTimestamp {
     year: u8,
@@ -418,9 +524,10 @@ pub struct SmscTimestamp {
     hour: u8,
     minute: u8,
     second: u8,
+    /// Hours' difference between local time and GMT.
     timezone: u8
 }
-pub fn reverse_byte(b: u8) -> u8 {
+pub(crate) fn reverse_byte(b: u8) -> u8 {
     let units = b >> 4;
     let tens = b & 0b0000_1111;
     (tens * 10) + units
@@ -442,17 +549,31 @@ impl<'a> TryFrom<&'a [u8]> for SmscTimestamp {
         })
     }
 }
+/// An SMS-DELIVER PDU.
+///
+/// **NB:** For simple usage, you'll only need to care about the `originating_address` field and
+/// the `get_message_data` method!
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliverPdu {
+    /// Service centre address, if provided here.
     pub sca: Option<PduAddress>,
+    /// First octet (contains some extra fields).
     pub first_octet: DeliverPduFirstOctet,
+    /// Originating address (i.e. message sender).
     pub originating_address: PduAddress,
+    /// Message data coding scheme.
     pub dcs: DataCodingScheme,
+    /// Message timestamp, from the service centre.
     pub scts: SmscTimestamp,
+    /// User data.
     pub user_data: Vec<u8>,
+    /// User data length.
     pub user_data_len: u8
 }
 impl DeliverPdu {
+    /// Get the actual data (i.e. text or binary content) of the message.
+    ///
+    /// Methods on `GsmMessageData` let you convert this into actual text.
     pub fn get_message_data(&self) -> GsmMessageData {
         GsmMessageData {
             bytes: self.user_data.clone(),
@@ -527,21 +648,45 @@ impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
 
     }
 }
+/// An SMS-SUBMIT PDU.
+///
+/// **NB:** For simple usage, ignore 99% of the stuff in this module and just use
+/// `Pdu::make_simple_message`!
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pdu {
+    /// Service centre address, if provided here.
+    ///
+    /// If you haven't set the service center address for all messages (see the `set_smsc_addr`
+    /// function in `cmd::sms`), you'll need to provide it in SMS-SUBMIT PDUs using the `set_sca`
+    /// method.
     pub sca: Option<PduAddress>,
+    /// First octet (contains some extra fields).
     pub first_octet: PduFirstOctet,
+    /// Message ID.
+    ///
+    /// This is set to 0 in `make_simple_message`. Presumably, you might ostensibly be able to use
+    /// it to store outgoing messages in modem memory and then address them later?
     pub message_id: u8,
+    /// Destination address (i.e. mesage recipient).
     pub destination: PduAddress,
+    /// Message data coding scheme.
     pub dcs: DataCodingScheme,
+    /// Validity period (used for message expiry).
+    ///
+    /// FIXME: as yet undocumented.
     pub validity_period: u8,
+    /// User data.
     pub user_data: Vec<u8>,
+    /// User data length.
     pub user_data_len: u8
 }
 impl Pdu {
+    /// Set the SMS service centre address.
     pub fn set_sca(&mut self, sca: PduAddress) {
         self.sca = Some(sca);
     }
+    /// Simple helper function to send a message to someone, prefilling in all the annoying fields
+    /// for you.
     pub fn make_simple_message(recipient: PduAddress, msg: GsmMessageData) -> Self {
         Pdu {
             sca: None,
@@ -567,6 +712,7 @@ impl Pdu {
     }
 }
 impl Pdu {
+    /// Convert to wire-format bytes, with a TPDU length value.
     pub fn as_bytes(&self) -> (Vec<u8>, usize) {
         let mut ret = vec![];
         let mut scalen = 1;
@@ -592,7 +738,7 @@ impl Pdu {
         (ret, tpdu_len)
     }
 }
-pub struct HexData<'a>(pub &'a [u8]);
+pub(crate) struct HexData<'a>(pub &'a [u8]);
 impl<'a> fmt::Display for HexData<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
        for b in self.0.iter() {

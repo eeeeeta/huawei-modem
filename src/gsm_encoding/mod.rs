@@ -1,4 +1,13 @@
-//! Utilities for dealing with the (annoying) GSM 7-bit encoding.
+//! Utilities for dealing with the (annoying) GSM 7-bit encoding (GSM 03.38), and decoding/encoding message
+//! data.
+//!
+//! "The annoying GSM 7-bit encoding" is otherwise known as [GSM
+//! 03.38](https://en.wikipedia.org/wiki/GSM_03.38), and that Wikipedia article is pretty
+//! informative.
+//!
+//! **NB:** SMS messages that are longer than the per-message character limit are sent & received
+//! as [concatenated SMS](https://en.wikipedia.org/wiki/Concatenated_SMS) messages. The various
+//! functions in this module will attempt to warn you about this.
 
 use crate::pdu::MessageEncoding;
 use std::convert::TryFrom;
@@ -101,6 +110,7 @@ fn split_buffers(buf: Vec<u8>, max_len: usize) -> Vec<Vec<u8>> {
     ret.push(cbuf);
     ret
 }
+/// The 'data' portion of an SMS message - i.e. the text, for a simple message.
 #[derive(Debug, Clone)]
 pub struct GsmMessageData {
     pub(crate) encoding: MessageEncoding,
@@ -108,21 +118,29 @@ pub struct GsmMessageData {
     pub(crate) bytes: Vec<u8>,
     pub(crate) user_data_len: u8
 }
+/// A decoded text mesasge, with optional user data header.
 #[derive(Debug, Clone, Default)]
 pub struct DecodedMessage {
+    /// Decoded text.
     pub text: String,
+    /// User data header. You'll want this to check if the message is concatenated, i.e. is part of
+    /// a multi-part series.
     pub udh: Option<UserDataHeader>
 }
 impl GsmMessageData {
+    /// Get the message encoding.
     pub fn encoding(&self) -> &MessageEncoding {
         &self.encoding
     }
+    /// Get the underlying bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
+    /// Get the user data length.
     pub fn user_data_len(&self) -> u8 {
         self.user_data_len
     }
+    /// Attempt to decode this message.
     pub fn decode_message(&self) -> HuaweiResult<DecodedMessage> {
         use encoding::{Encoding, DecoderTrap};
         use encoding::all::UTF_16BE;
@@ -165,6 +183,11 @@ impl GsmMessageData {
             x => Err(HuaweiError::UnsupportedEncoding(x, self.bytes.clone()))
         }
     }
+    /// Encode an arbitrary string of text into one, or multiple, GSM message data segments.
+    ///
+    /// If this function returns more than one bit of data, it means it's been split into multiple
+    /// concatenated parts for you, and you'll need to send each part individually in order, as
+    /// part of a new `Pdu` to your desired recipient.
     pub fn encode_message(msg: &str) -> Vec<GsmMessageData> {
         use encoding::{Encoding, EncoderTrap};
         use encoding::all::UTF_16BE;
@@ -253,7 +276,7 @@ impl GsmMessageData {
 }
 // This function wins the "I spent a *goddamn hour* debugging this crap" award.
 // The best part? The bug wasn't even in this function...!
-pub fn decode_sms_7bit(orig: &[u8], padding: usize, len: usize) -> Vec<u8> {
+pub(crate) fn decode_sms_7bit(orig: &[u8], padding: usize, len: usize) -> Vec<u8> {
     let mut ret = vec![0];
     // Number of bits in the current octet that come from the current septet.
     let mut chars_cur = 7;
@@ -281,7 +304,7 @@ pub fn decode_sms_7bit(orig: &[u8], padding: usize, len: usize) -> Vec<u8> {
     }
     ret
 }
-pub fn encode_sms_7bit(orig: &[u8], padding: usize) -> Vec<u8> {
+pub(crate) fn encode_sms_7bit(orig: &[u8], padding: usize) -> Vec<u8> {
     let mut ret = vec![];
     // Number of bits in the current octet that come from the current septet.
     let mut chars_cur = 7;

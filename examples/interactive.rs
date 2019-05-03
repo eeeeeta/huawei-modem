@@ -11,7 +11,6 @@ use huawei_modem::gsm_encoding::GsmMessageData;
 use std::io::prelude::*;
 
 fn main() {
-
     env_logger::init().unwrap();
     let mut core = Core::new().unwrap();
     let mut modem = HuaweiModem::new_from_path("/dev/ttyUSB2", &core.handle()).unwrap();

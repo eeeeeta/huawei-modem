@@ -1,22 +1,41 @@
+//! Utilities for dealing with User Data Headers (used for concatenated SMS, among other things)
+//! inside messages.
+//!
+//! [This Wikipedia article](https://en.wikipedia.org/wiki/User_Data_Header) explains what this is
+//! for pretty well. Most uses of the UDH are vestigial; nowadays it's mostly useful for sending
+//! concatenated SMS.
 use std::convert::TryFrom;
 use crate::errors::*;
 
+/// Component of a User Data Header.
 #[derive(Debug, Clone)]
 pub struct UdhComponent {
+    /// Component identifier.
     pub id: u8,
+    /// Component data.
     pub data: Vec<u8>
 }
+/// A User Data Header itself.
+///
+/// You'll likely just want to call `get_concatenated_sms_data` on this to check whether the
+/// message is concatenated.
 #[derive(Debug, Clone)]
 pub struct UserDataHeader {
     pub components: Vec<UdhComponent>
 }
+/// Data about a concatenated SMS.
 #[derive(Debug, Clone)]
 pub struct ConcatenatedSmsData {
+    /// Reference that identifies which message this is a part of - this is like an ID for the
+    /// whole message.
     pub reference: u16,
+    /// How many parts to the message exist (e.g. 2).
     pub parts: u8,
+    /// Which part this is (e.g. 1 of 2).
     pub sequence: u8
 }
 impl UserDataHeader {
+    /// If there is concatenated SMS data in this header, return it.
     pub fn get_concatenated_sms_data(&self) -> Option<ConcatenatedSmsData> {
         for comp in self.components.iter() {
             if comp.id == 0 && comp.data.len() == 3 {
@@ -37,6 +56,7 @@ impl UserDataHeader {
         }
         None
     }
+    /// Serialize this UDH to wire format.
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut ret = vec![];
         for comp in self.components.iter() {

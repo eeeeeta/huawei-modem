@@ -2,7 +2,7 @@
 authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
 edition = "2018"
 name = "huawei-modem"
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 bytes = "0.4"
