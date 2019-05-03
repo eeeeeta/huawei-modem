@@ -1,6 +1,6 @@
 use num::FromPrimitive;
-use errors::{HuaweiResult, HuaweiError};
-use at::AtValue;
+use crate::errors::{HuaweiResult, HuaweiError};
+use crate::at::AtValue;
 
 pub trait HuaweiFromPrimitive where Self: Sized {
     fn from_integer(i: u32) -> HuaweiResult<Self>;

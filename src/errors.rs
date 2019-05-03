@@ -1,8 +1,8 @@
 //! Error handling.
 use std::io;
 use futures::sync::oneshot::Canceled;
-use pdu::MessageEncoding;
-use at;
+use crate::pdu::MessageEncoding;
+use crate::at;
 use failure::Fail;
 
 /// An error either raised by a command implementation, or by the library itself.

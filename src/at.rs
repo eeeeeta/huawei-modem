@@ -1,7 +1,7 @@
 //! Types for dealing with AT commands and replies.
-use error_codes::CmsError;
+use crate::error_codes::CmsError;
 use std::fmt;
-use errors::{HuaweiError, HuaweiResult};
+use crate::errors::{HuaweiError, HuaweiResult};
 /// An AT result code, which indicates the completion of a command.
 #[derive(Fail, Debug, Clone, PartialEq, Eq, is_enum_variant)]
 pub enum AtResultCode {

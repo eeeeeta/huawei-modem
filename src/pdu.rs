@@ -1,9 +1,9 @@
 use std::fmt;
 use std::str::FromStr;
 use num::FromPrimitive;
-use convert::{Infallible, TryFrom};
-use errors::*;
-use gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
+use crate::convert::{Infallible, TryFrom};
+use crate::errors::*;
+use crate::gsm_encoding::{GsmMessageData, gsm_decode_string, decode_sms_7bit};
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive, Hash)]

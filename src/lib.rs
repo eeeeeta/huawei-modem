@@ -1,29 +1,19 @@
-extern crate futures;
-extern crate tokio_core;
-extern crate tokio_file_unix;
 #[macro_use] extern crate log;
-extern crate env_logger;
-extern crate failure;
 #[macro_use] extern crate failure_derive;
 #[macro_use] extern crate nom;
-extern crate encoding;
-extern crate tokio_io;
-extern crate bytes;
 #[macro_use] extern crate derive_is_enum_variant;
-extern crate num;
 #[macro_use] extern crate num_derive;
-extern crate rand;
 
 use std::fs::{File, OpenOptions};
 use tokio_file_unix::File as FileNb;
-use codec::AtCodec;
-use at::{AtResponse, AtCommand};
+use crate::codec::AtCodec;
+use crate::at::{AtResponse, AtCommand};
 use futures::{Future, Poll};
-use tokio_io::AsyncRead;
 use futures::sync::{oneshot, mpsc};
-use future::{ModemRequest, ModemResponse, HuaweiModemFuture};
+use crate::future::{ModemRequest, ModemResponse, HuaweiModemFuture};
 use tokio_core::reactor::Handle;
-pub use errors::HuaweiResult;
+use tokio_codec::Decoder;
+pub use crate::errors::HuaweiResult;
 pub type HuaweiFuture<T> = Box<Future<Item = T, Error = errors::HuaweiError>>;
 
 macro_rules! check_offset {
@@ -47,7 +37,7 @@ pub mod util;
 mod future;
 
 use std::path::Path;
-use errors::HuaweiError;
+use crate::errors::HuaweiError;
 
 pub struct ModemResponseFuture {
     rx: Result<oneshot::Receiver<ModemResponse>, ()>
@@ -77,7 +67,7 @@ impl HuaweiModem {
     }
     pub fn new_from_file(f: File, h: &Handle) -> HuaweiResult<Self> {
         let ev = FileNb::new_nb(f)?.into_io(h)?;
-        let framed = ev.framed(AtCodec);
+        let framed = AtCodec.framed(ev);
         let (tx, rx) = mpsc::unbounded();
         let (urctx, urcrx) = mpsc::unbounded();
         let fut = HuaweiModemFuture::new(framed, rx, urctx);

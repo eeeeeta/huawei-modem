@@ -1,10 +1,10 @@
-use {HuaweiModem};
-use at::*;
-use errors::*;
+use crate::{HuaweiModem};
+use crate::at::*;
+use crate::errors::*;
 use futures::Future;
-use pdu::{HexData, Pdu, AddressType, DeliverPdu};
-use convert::TryFrom;
-use util::HuaweiFromPrimitive;
+use crate::pdu::{HexData, Pdu, AddressType, DeliverPdu};
+use crate::convert::TryFrom;
+use crate::util::HuaweiFromPrimitive;
 
 /// The storage status of an SMS message.
 #[repr(u8)]

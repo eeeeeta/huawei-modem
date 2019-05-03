@@ -1,8 +1,8 @@
 //! Utilities for dealing with the (annoying) GSM 7-bit encoding.
 
-use pdu::MessageEncoding;
-use convert::TryFrom;
-use errors::*;
+use crate::pdu::MessageEncoding;
+use crate::convert::TryFrom;
+use crate::errors::*;
 
 mod lookup_tables;
 pub mod udh;
@@ -126,7 +126,7 @@ impl GsmMessageData {
     pub fn decode_message(&self) -> HuaweiResult<DecodedMessage> {
         use encoding::{Encoding, DecoderTrap};
         use encoding::all::UTF_16BE;
-        use gsm_encoding;
+        use crate::gsm_encoding;
         let mut padding = 0;
         let mut start = 0;
         let mut udh = None;
@@ -169,7 +169,7 @@ impl GsmMessageData {
         use encoding::{Encoding, EncoderTrap};
         use encoding::all::UTF_16BE;
         use rand;
-        use gsm_encoding;
+        use crate::gsm_encoding;
 
         if let Some(buf) = gsm_encoding::try_gsm_encode_string(msg) {
             let user_data_len = buf.len();
@@ -268,7 +268,7 @@ pub fn decode_sms_7bit(orig: &[u8], padding: usize, len: usize) -> Vec<u8> {
             i += 1;
         }
         let next = data >> chars_cur;
-        let mut cur = ((data << (8 - chars_cur)) >> (8 - chars_cur)) << (7 - chars_cur);
+        let cur = ((data << (8 - chars_cur)) >> (8 - chars_cur)) << (7 - chars_cur);
         ret[i] |= cur;
         if j+1 < orig.len() || ret.len() < len {
             ret.push(next);

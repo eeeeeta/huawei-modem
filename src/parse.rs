@@ -1,5 +1,5 @@
-use at::*;
-use error_codes::CmsError;
+use crate::at::*;
+use crate::error_codes::CmsError;
 use num::FromPrimitive;
 use encoding::{Encoding, DecoderTrap};
 use encoding::all::{ASCII};
@@ -201,7 +201,7 @@ named!(pub responses(&[u8]) -> Vec<AtResponse>,
 #[cfg(test)]
 mod test {
     use super::*;
-    use at::AtValue::*;
+    use crate::at::AtValue::*;
     #[test]
     fn value_string() {
         assert_eq!(parse_string(b"\"testing\"").unwrap(),

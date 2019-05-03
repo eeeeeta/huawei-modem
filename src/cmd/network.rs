@@ -1,8 +1,8 @@
-use {HuaweiModem};
-use at::*;
-use errors::*;
+use crate::{HuaweiModem};
+use crate::at::*;
+use crate::errors::*;
 use futures::Future;
-use util::HuaweiFromPrimitive;
+use crate::util::HuaweiFromPrimitive;
 
 #[repr(u8)]
 #[derive(Fail, Debug, FromPrimitive, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
