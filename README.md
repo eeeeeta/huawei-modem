@@ -3,6 +3,7 @@
 ![CC0 licensed](https://licensebuttons.net/p/zero/1.0/88x31.png)
 [![Crates.io badge](https://img.shields.io/crates/v/huawei-modem.svg)](https://crates.io/crates/huawei-modem)
 [![Docs](https://docs.rs/huawei-modem/badge.svg)](https://docs.rs/huawei-modem)
+![GitHub stars](https://img.shields.io/github/stars/eeeeeta/huawei-modem.svg?style=social)
 
 The `huawei-modem` library provides a set of utilities for interfacing with USB 3G/HSDPA/UMTS
 modems (particularly Huawei models, like the E220 and E3531) that use the Hayes/AT command set.
@@ -22,6 +23,13 @@ broadly usable for most common SMS sending & receiving needs!
 It could do with a bit more ergonomics, however. Currently, if you're confused as to how to
 use it, have a look at `sms-irc`'s usage above, look at the examples, or file an issue if
 you're still stuck!
+
+## Contributing
+
+This project is passively maintained (i.e. not actively developed, but I generally consider it complete for my use-case and only develop when needed).
+[PRs and issues on GitHub](https://github.com/eeeeeta/huawei-modem) are more than welcome!
+
+If you're more old-school, feel free to also [email me a patch](https://git-send-email.io/) the old-fashioned way.
 
 ## Licensing
 

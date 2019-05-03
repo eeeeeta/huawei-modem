@@ -2,6 +2,13 @@
 authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
 edition = "2018"
 name = "huawei-modem"
+license = "CC0"
+documentation = "https://docs.rs/huawei-modem"
+homepage = "https://git.theta.eu.org/huawei-modem.git/about/"
+repository = "https://git.theta.eu.org/huawei-modem.git/"
+readme = "README.md"
+keywords = ["sms", "gsm", "pdu", "modem", "huawei"]
+maintenance = { status = "passively-maintained" }
 version = "0.2.0"
 
 [dependencies]
