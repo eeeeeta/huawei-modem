@@ -1,16 +1,16 @@
 [package]
-authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
+authors = ["eta <github@eta.st>"]
 edition = "2018"
 name = "huawei-modem"
 description = "A set of utilities for interfacing with USB 3G/HSDPA/UMTS modems (particularly Huawei models) that use the Hayes/AT command set."
 license = "CC0-1.0"
 documentation = "https://docs.rs/huawei-modem"
-homepage = "https://git.theta.eu.org/huawei-modem.git/about/"
-repository = "https://git.theta.eu.org/huawei-modem.git/"
+homepage = "https://git.eta.st/eta/huawei-modem"
+repository = "https://git.eta.st/eta/huawei-modem"
 readme = "README.md"
 keywords = ["sms", "gsm", "pdu", "modem", "huawei"]
 maintenance = { status = "passively-maintained" }
-version = "0.2.0"
+version = "0.2.2"
 
 [dependencies]
 bytes = "0.4"

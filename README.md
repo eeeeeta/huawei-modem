@@ -9,8 +9,8 @@ The `huawei-modem` library provides a set of utilities for interfacing with USB 
 modems (particularly Huawei models, like the E220 and E3531) that use the Hayes/AT command set.
 
 At present, the library's main consumer is
-[sms-irc](https://git.theta.eu.org/sms-irc.git/about/). In particular, it may be helpful to
-look at [modem.rs](https://git.theta.eu.org/sms-irc.git/tree/src/modem.rs) inside that project
+[sms-irc](https://git.eta.st/eta/sms-irc). In particular, it may be helpful to
+look at [modem.rs](https://git.eta.st/eta/sms-irc/src/branch/master/src/modem.rs) inside that project
 to get a feel for how to use this library, as well as looking inside the `examples/`
 subdirectory to see some simple SMS sending/receiving examples.
 
