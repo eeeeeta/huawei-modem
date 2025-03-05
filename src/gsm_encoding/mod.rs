@@ -148,6 +148,7 @@ impl GsmMessageData {
         let mut padding = 0;
         let mut start = 0;
         let mut udh = None;
+        let mut decodelen = self.user_data_len as usize;
         if self.udh {
             if self.bytes.len() < 1 {
                 Err(HuaweiError::InvalidPdu("UDHI specified, but no data"))?
@@ -155,6 +156,8 @@ impl GsmMessageData {
             let udhl = self.bytes[0] as usize;
             padding = 7 - (((udhl + 1) * 8) % 7);
             start = udhl + 1;
+            // Why the extra +1? I don't know. One for udhl, but that's taken care of above.
+            decodelen -= start + 1;
             if self.bytes.len() < start {
                 Err(HuaweiError::InvalidPdu("UDHL goes past end of data"))?
             }
@@ -170,7 +173,7 @@ impl GsmMessageData {
             MessageEncoding::Gsm7Bit => {
                 let buf = decode_sms_7bit(&self.bytes[start..], padding, self.user_data_len as _);
                 Ok(DecodedMessage {
-                    text: gsm_encoding::gsm_decode_string(&buf),
+                    text: gsm_encoding::gsm_decode_string(&buf[0..decodelen]),
                     udh
                 })
             },
