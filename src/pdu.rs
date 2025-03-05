@@ -680,6 +680,86 @@ pub struct Pdu {
     /// User data length.
     pub user_data_len: u8
 }
+impl<'a> TryFrom<&'a [u8]> for Pdu {
+    type Error = HuaweiError;
+    fn try_from(b: &[u8]) -> HuaweiResult<Self> {
+        if b.len() == 0 {
+            return Err(HuaweiError::InvalidPdu("zero-length input"));
+        }
+        let scalen = b[0];
+        let mut offset: usize = scalen as usize + 1;
+        let sca = if scalen > 0 {
+            let o = offset - 1;
+            check_offset!(b, o, "SCA");
+            Some(PduAddress::try_from(&b[0..offset])?)
+        }
+        else {
+            None
+        };
+        check_offset!(b, offset, "first octet");
+        let first_octet = PduFirstOctet::from(b[offset]);
+        offset += 1;
+        let message_id = b[offset];
+        offset += 1;
+        check_offset!(b, offset, "destination address len");
+        let destination_len_nybbles = b[offset];
+        // destination_len_nybbles represents the length of the address, in nybbles (half-octets).
+        // Therefore, we divide by 2, rounding up, to get the number of full octets.
+        let destination_len_octets = (destination_len_nybbles / 2) + destination_len_nybbles % 2;
+        // destination_offset = what we're going to add to the offset to get the new offset
+        // This is the destination length, in octets, plus one byte for the address length field,
+        // and another because range syntax is non-inclusive.
+        let destination_offset = (destination_len_octets as usize) + 2;
+        let destination_end = offset + destination_offset;
+        let de = destination_end - 1;
+        let destination: PduAddress;
+        // Draft messages might not have a number set
+        if destination_len_octets > 0 {
+            check_offset!(b, de, "destination address");
+            destination = PduAddress::try_from(&b[offset..destination_end])?;
+        } else {
+            let v: Vec<u8> = Vec::new();
+            destination = PduAddress {
+                type_addr: AddressType {
+                    type_of_number: TypeOfNumber::Unknown,
+                    numbering_plan_identification: NumberingPlanIdentification::IsdnTelephone,
+                },
+                number: PhoneNumber(v),
+            };
+        }
+        offset += destination_offset;
+        check_offset!(b, offset, "protocol identifier");
+        let _pid = b[offset];
+        offset += 1;
+        check_offset!(b, offset, "data coding scheme");
+        let dcs = DataCodingScheme::from(b[offset]);
+        offset += 1;
+        check_offset!(b, offset, "validity period");
+        // Somehow validity_period consumes a byte even if first_octet does not indicate the
+        // presence of a validity period.
+        let validity_period = b[offset];
+        offset += 1;
+        check_offset!(b, offset, "user data len");
+        let user_data_len = b[offset];
+        offset += 1;
+        let user_data = if b.get(offset).is_some() {
+            b[offset..].to_owned()
+        }
+        else {
+            vec![]
+        };
+        Ok(Pdu {
+            sca: sca,
+            first_octet: first_octet,
+            message_id: message_id,
+            destination: destination,
+            dcs: dcs,
+            validity_period: validity_period,
+            user_data: user_data,
+            user_data_len: user_data_len
+        })
+    }
+}
 impl Pdu {
     /// Set the SMS service centre address.
     pub fn set_sca(&mut self, sca: PduAddress) {
