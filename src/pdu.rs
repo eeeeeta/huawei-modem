@@ -518,14 +518,14 @@ impl From<u8> for DeliverPduFirstOctet {
 /// Service centre timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmscTimestamp {
-    year: u8,
-    month: u8,
-    day: u8,
-    hour: u8,
-    minute: u8,
-    second: u8,
+    pub year: u8,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
     /// Hours' difference between local time and GMT.
-    timezone: u8
+    pub timezone: u8
 }
 pub(crate) fn reverse_byte(b: u8) -> u8 {
     let units = b >> 4;
