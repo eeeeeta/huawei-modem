@@ -179,8 +179,11 @@ impl GsmMessageData {
             },
             MessageEncoding::Ucs2 => {
                 Ok(DecodedMessage {
-                    text: UTF_16BE.decode(&self.bytes[start..], DecoderTrap::Replace).unwrap(),
-                    udh
+                    // We don't have to cut away a possible user data header length here because
+                    // "start" is incremented accordingly above and the user data ends after
+                    // user_data_len bytes with or without the header.
+                    text: UTF_16BE.decode(&self.bytes[start..self.user_data_len as usize],
+                    DecoderTrap::Replace).unwrap(), udh
                 })
             },
             x => Err(HuaweiError::UnsupportedEncoding(x, self.bytes.clone()))
